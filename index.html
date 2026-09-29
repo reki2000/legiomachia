@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>古代会戦シミュレーター</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <div id="hud">
+    <div id="top">
+      <div class="panel" id="status">
+        <div class="title" id="stageTitle">古代会戦シミュレーター</div>
+        <div class="armies">
+          <span class="red">■ 軍団 <b id="c0">0</b></span>
+          <span class="blue">■ 東方王国 <b id="c1">0</b></span>
+        </div>
+        <div class="small" id="stats"></div>
+      </div>
+      <div class="panel" id="controls">
+        <label>舞台
+          <select id="sStage">
+            <option value="field">平原の会戦</option>
+            <option value="river">渡河戦</option>
+            <option value="siege">攻城戦</option>
+          </select>
+        </label>
+        <label>規模
+          <select id="sSize">
+            <option value="S">小 (~800)</option>
+            <option value="M" selected>中 (~2000)</option>
+            <option value="L">大 (~4500)</option>
+            <option value="XL">特大 (~10000)</option>
+            <option value="XXL">超大 (~20000)</option>
+          </select>
+        </label>
+        <button id="bReset">再配置</button>
+        <button id="bStart" class="primary">開戦 (Enter)</button>
+        <button id="bPause">一時停止 (Space)</button>
+        <label>速度
+          <select id="sSpeed">
+            <option value="0.1">0.1x</option>
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </label>
+        <label>カメラ
+          <select id="sCam">
+            <option value="free">自由 (1)</option>
+            <option value="follow">追跡 (2)</option>
+            <option value="cine">映画 (3)</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="cAuto" checked /> 自軍AI</label>
+        <label><input type="checkbox" id="cPs1" /> PS1風</label>
+      </div>
+    </div>
+    <div class="panel" id="tree"></div>
+    <div class="panel" id="selPanel" hidden>
+      <div id="selName"></div>
+      <div id="selInfo" class="small"></div>
+      <div class="orders">
+        <button data-o="hold">停止 (H)</button>
+        <button data-o="advance">前進 (V)</button>
+        <button data-o="charge">突撃 (C)</button>
+        <button data-o="fire">射撃 (X)</button>
+        <button data-o="retreat">後退 (B)</button>
+        <button data-o="ai">AIに任せる</button>
+      </div>
+      <div class="orders">
+        <span class="small">隊形</span>
+        <button data-f="tight">密集</button>
+        <button data-f="normal">通常</button>
+        <button data-f="loose">散開</button>
+      </div>
+      <div class="orders" id="engOrders" hidden>
+        <span class="small">工兵</span>
+        <button data-t="stakes">防御杭を設置</button>
+        <button data-t="ladder">梯子を掛ける</button>
+        <button data-t="pontoon">舟橋を架ける</button>
+        <button data-t="demolish">木橋を落とす</button>
+        <button data-t="ram">城門を破る</button>
+      </div>
+    </div>
+    <div class="panel" id="soldier" hidden></div>
+    <div id="log"></div>
+    <div class="panel small" id="help">
+      <b>操作</b><br />
+      WASD/矢印: 移動 ・ Q/E: 回転 ・ R/F: 俯角 ・ ホイール: ズーム<br />
+      中ドラッグ / Alt+左ドラッグ: 視点回転<br />
+      左クリック/ドラッグ: 部隊選択 (Shiftで追加) ・ 兵をクリックで個人情報<br />
+      右クリック: 移動 / 敵をクリックで攻撃 (右ドラッグで向き指定)<br />
+      工兵選択中の右クリック: 川→舟橋, 橋→破壊, 城壁→梯子, 地面→防御杭<br />
+      左の編成表: 将をクリックで配下の全部隊を選択<br />
+      T: 兵を追跡 ・ Z: スロー ・ Tab: 部隊を順に選択 ・ P: PS1風<br />
+      <span id="helpToggle">[閉じる]</span>
+    </div>
+    <div id="banner"></div>
+    <div id="dragBox" hidden></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
