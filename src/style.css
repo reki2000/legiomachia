@@ -55,3 +55,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 #log { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; text-align: center; font-size: 15px; color: #f4e6c0; text-shadow: 0 1px 6px #000, 0 0 2px #000; pointer-events: none; line-height: 1.5; }
 #log div { transition: opacity 1s; }
 [hidden] { display: none !important; }
+
+#ghLink { position: absolute; top: 8px; right: 8px; display: flex; pointer-events: auto; color: #f4e6c0; opacity: 0.7; filter: drop-shadow(0 1px 3px #000); }
+#ghLink:hover { opacity: 1; color: var(--accent); }
