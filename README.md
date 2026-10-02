@@ -6,6 +6,12 @@ An ancient battle simulator in the browser (WebGL / three.js, plain JavaScript).
 
 Infantry, cavalry, war elephants, chariots, camels, war dogs and siege engines march, charge and crash into each other — with PS1-era low-poly visuals and an emphasis on believable human motion.
 
+![Open field battle](docs/field.png)
+
+| River crossing | Siege |
+|---|---|
+| ![River crossing](docs/river.png) | ![Siege](docs/siege.png) |
+
 ```
 npm install
 npm run dev        # http://localhost:5173/
