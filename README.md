@@ -3,6 +3,7 @@
 An ancient battle simulator in the browser (WebGL / three.js, plain JavaScript).
 
 **Live demo: https://reki2000.github.io/legiomachia/**
+
 Infantry, cavalry, war elephants, chariots, camels, war dogs and siege engines march, charge and crash into each other — with PS1-era low-poly visuals and an emphasis on believable human motion.
 
 ```
