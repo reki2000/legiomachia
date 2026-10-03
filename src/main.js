@@ -15,6 +15,7 @@ import { CameraRig } from './camera.js';
 import { K_INF, K_ENG, TYPES, WEAPONS } from './sim/defs.js';
 import { Sound } from './sound.js';
 import { Weather, WEATHER } from './weather.js';
+import { Objective, MODES } from './sim/objective.js';
 
 const $ = id => document.getElementById(id);
 
@@ -105,6 +106,8 @@ world.engineering = new Engineering(world);
 world.command = new Command(world);
 buildScenario(world, stageKind, sizeKey, Number(params.get('seed')) || 7);
 world.command.setup();
+world.objective = new Objective(world, MODES[params.get('mode')] ? params.get('mode') : 'annihilate', world.builder);
+$('sMode').value = world.objective.mode;
 world.auto[0] = $('cAuto').checked;
 {
   const wk = WEATHER[params.get('weather')] ? params.get('weather') : 'clear';
@@ -122,7 +125,13 @@ world.on((type, data) => onWorldEvent(type, data));
 const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
 
 const rig = new CameraRig(camera, renderer.domElement);
-if (stage.kind === 'siege') { rig.target.set(0, 0, 0); rig.dist = 110; rig.pitch = 0.42; }
+if (stage.kind === 'siege') { rig.target.set(0, 0, 0); rig.dist = stage.id === 'camp' ? 80 : 110; rig.pitch = 0.42; }
+// the cinematic camera is the default; ?cam=free (or follow) starts in another mode
+{
+  const cam = ['free', 'follow', 'cine'].includes(params.get('cam')) ? params.get('cam') : 'cine';
+  rig.setMode(cam, world);
+  $('sCam').value = cam;
+}
 const selection = new Set();
 let paused = false, timeScale = 1, slowmo = false, deployT = 0;
 const autoStart = params.get('autostart');
@@ -146,6 +155,7 @@ function onWorldEvent(type, data) {
   switch (type) {
     case 'start': banner('開 戦'); break;
     case 'gatebreak': banner('城門突破', 3); break;
+    case 'reinforce': log(`${teamName(data.team)}の増援が到着: ${data.names.join('、')}`); banner('増援到着', 2.5); break;
     case 'bridge': log(`${data.name}が落とされた`); break;
     case 'pontoon': log('舟橋が架かった'); break;
     case 'ladder': log('城壁に梯子が掛けられた'); break;
@@ -181,11 +191,12 @@ $('cPs1').onchange = e => setPs1(e.target.checked);
 }
 const reload = () => {
   const u = new URL(location.href);
-  u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value); u.searchParams.set('weather', $('sWeather').value);
+  u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value); u.searchParams.set('weather', $('sWeather').value); u.searchParams.set('mode', $('sMode').value);
   location.href = u.toString();
 };
 $('sSize').onchange = reload;
 $('sStage').onchange = reload;
+$('sMode').onchange = reload;
 $('bReset').onclick = reload;
 $('help').dataset.full = $('help').innerHTML;
 {
@@ -550,8 +561,10 @@ function frame(now) {
     $('stats').textContent = `FPS ${fps.toFixed(0)} ・ sim ${simMs.toFixed(1)}ms ・ draw ${renMs.toFixed(1)}ms ・ 表示 ${bodies.visibleCount}/${world.agents.length} ・ 飛翔体 ${world.proj.flying} ・ t=${world.time.toFixed(0)}s${slowmo ? ' ・ スロー' : ''}`;
     if (selection.size) updateSelPanel();
     renderTree(); renderSoldier();
+    $('objective').textContent = world.objective.status();
     if (world.phase === 'battle' && !world.ended) {
-      if (c[1] === 0 || c[0] === 0) { world.ended = true; banner(c[1] === 0 ? '軍団の勝利' : '東方王国の勝利', 6); }
+      const res = world.objective.check(c);
+      if (res) { world.ended = true; banner(res.text, 8); }
     }
   }
 }

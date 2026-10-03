@@ -205,14 +205,22 @@ export class Command {
   wingAI(army, wing) {
     const w = this.w, st = w.stage;
     const claimed = new Map();
+    const obj = w.objective;
     for (const reg of wing.regs) {
       if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow) continue;
       if (reg.kind === K_CAV && reg.T.commander) continue;
+      // retreat: everything but the rearguard marches for the exit
+      if (obj && obj.mode === 'retreat' && army.team === 0 && reg.kind !== K_ENG && reg.type !== 'guard' && !obj.isRearguard(reg)) {
+        const tz = obj.exit.z - 25;
+        if (reg.order !== 'move' || reg.tz > tz + 40) w.orderMove(reg, reg.cx * 0.7, tz);
+        continue;
+      }
       const type = reg.type;
       const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
       if (type === 'engineer' || reg.kind === K_ENG) continue; // handled by stage tasks
       if (type === 'guard') { this.guardAI(army, reg); continue; }
       if (!wing.committed) { this.holdGround(reg); continue; }
+      if (obj && obj.mode === 'capture' && army.posture === 'attack' && st.kind !== 'siege' && this.captureMove(army, reg, obj.point)) continue;
       if (W && W.ranged && !W.ranged.ammo) { this.missileAI(army, reg); continue; }
       const defend = army.posture === 'defend';
       if (defend) {
@@ -238,6 +246,18 @@ export class Command {
         if (dn < dc * 0.6) reg.targetReg = e;
       }
     }
+  }
+  // capture mode: units with nothing close to fight make for the flag and fan out around it
+  captureMove(army, reg, p) {
+    const w = this.w;
+    if (this.nearestThreat(reg, 45)) return false;
+    const d = Math.hypot(reg.cx - p.x, reg.cz - p.z);
+    if (d < p.r * 0.6) { if (reg.order !== 'hold' && reg.order !== 'charge') w.orderHold(reg); return true; }
+    const idx = w.regs.indexOf(reg);
+    const ox = ((idx % 5) - 2) * 9, oz = (army.team === 0 ? -1 : 1) * (4 + Math.floor(idx / 5) % 3 * 8);
+    const key = Math.round(p.x + ox) + ',' + Math.round(p.z + oz);
+    if (reg.order !== 'move' || reg.objTarget !== key) { reg.objTarget = key; w.orderMove(reg, p.x + ox, p.z + oz); }
+    return true;
   }
   holdGround(reg) {
     const w = this.w;
@@ -353,7 +373,7 @@ export class Command {
   // ------------------------------------------------------------ engineers
   deployTasks() {
     const w = this.w, st = w.stage;
-    if (st.kind !== 'field') return;
+    if (st.kind !== 'field' || (w.objective && w.objective.mode === 'retreat')) return;
     for (const reg of w.regs) {
       if (reg.type !== 'engineer' || !w.auto[reg.team] && reg.team === 0 && reg.manual) continue;
       // stake the front of the most exposed missile/spear unit
@@ -373,7 +393,7 @@ export class Command {
     const w = this.w, st = w.stage;
     if (st.kind === 'siege') {
       const C = st.city, S = st.S;
-      const spots = [-70 * S, -34 * S, 30 * S, 66 * S].map(x => Math.round(x / 2) * 2 + 1);
+      const spots = [-0.58, -0.28, 0.25, 0.55].map(f => Math.round(f * C.L / 2) * 2 + 1);
       const engs = w.regs.filter(r => r.team === 0 && r.type === 'engineer' && w.auto[0]);
       engs.forEach((r, i) => {
         const xs = spots.filter((_, k) => k % engs.length === i);

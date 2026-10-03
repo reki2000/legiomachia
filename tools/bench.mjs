@@ -5,6 +5,7 @@ import { buildStage } from '../src/sim/stage.js';
 import { Nav } from '../src/sim/nav.js';
 import { Engineering } from '../src/sim/engineering.js';
 import { Command } from '../src/sim/command.js';
+import { Objective } from '../src/sim/objective.js';
 import { setStage } from '../src/terrain.js';
 import { buildScenario } from '../src/scenario.js';
 const stageKind = process.argv[2] || 'field', size = process.argv[3] || 'M', secs = Number(process.argv[4] || 60);
@@ -17,6 +18,7 @@ const w = new World(stage, nav); w.proj = new Projectiles();
 w.engineering = new Engineering(w); w.command = new Command(w);
 buildScenario(w, stageKind, size, Number(process.env.SEED || 7));
 w.command.setup();
+w.objective = new Objective(w, process.env.MODE || 'annihilate', w.builder);
 const ev = {};
 w.on((type) => { ev[type] = (ev[type] || 0) + 1; });
 for (let i = 0; i < 60; i++) w.update(1 / 60);
@@ -31,6 +33,7 @@ for (let i = 0; i < secs * 60; i++) {
     last = now;
   }
 }
+if (w.objective) console.log('objective', w.objective.mode, JSON.stringify(w.objective.check(w.counts()) || 'running'), w.objective.status());
 console.log('total', ((performance.now() - t0) / (secs * 60)).toFixed(2), 'ms/step  agents', w.agents.length);
 console.log('events', JSON.stringify(ev));
 console.log(w.regs.map(r => `${r.team}:${r.name}:${r.order[0]}${r.alive}${r.charging ? '!' : ''}${r.noPath ? '?' : ''}`).join(' | '));

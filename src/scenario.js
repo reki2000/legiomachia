@@ -95,7 +95,9 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   const sq = Math.sqrt(m);
   const b = new Builder(world, sq, world.stage.S);
   const st = world.stage;
+  world.builder = b;
   if (st.kind === 'river') river(b, st);
+  else if (st.id === 'camp') camp(b, st);
   else if (st.kind === 'siege') siege(b, st);
   else if (st.id === 'canyon') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
   else if (st.id === 'hills') field(b, { hills: true });
@@ -256,4 +258,45 @@ function siege(b, st) {
   b.officer(0, '左翼', X(70), -40, '左翼将');
   b.officer(0, '予備', X(-20), -70, '予備将');
   b.general(0, 0, -80, 6);
+}
+
+// ------------------------------------------------------------------ camp assault
+// A palisaded camp, small and low: fewer men, the same ladders, ram and gate.
+function camp(b, st) {
+  const C = st.city, L = C.L, S = st.S;
+  b.armies[0].posture = 'assault';
+  b.armies[1].posture = 'defend';
+  const wz = C.z0 + 1.2;
+  // Blue: on the palisade, with reserves among the tents
+  b.reg(1, 'archer', 14, 2, -L * 0.68, wz, '柵上弓兵 西', { wing: '城壁' });
+  b.reg(1, 'archer', 14, 2, L * 0.68, wz, '柵上弓兵 東', { wing: '城壁' });
+  b.reg(1, 'xbow', 8, 2, 0, wz, '門楼弩兵', { wing: '城壁' });
+  b.reg(1, 'axe', 12, 2, -L * 0.3, wz, '柵上守備隊 西', { wing: '城壁', q: 0.5 });
+  b.reg(1, 'axe', 12, 2, L * 0.3, wz, '柵上守備隊 東', { wing: '城壁', q: 0.5 });
+  b.reg(1, 'spear', 12, 4, -6, C.z1 + 12, '門内槍兵', { wing: '城内', role: 'reserve', q: 0.6 });
+  b.reg(1, 'axe', 12, 4, 14, C.z1 + 24, '斧兵', { wing: '城内', role: 'reserve' });
+  b.reg(1, 'mace', 12, 4, -16, C.z1 + 24, '徴募兵', { wing: '城内', role: 'reserve', q: 0.3 });
+  b.reg(1, 'ele', Math.max(2, Math.round(2 * b.sq)), 1, 0, C.z1 + 42, '戦象', { wing: '城内', role: 'reserve', fixed: true });
+  b.officer(1, '城壁', L * 0.2, C.z1 + 8, '城壁将');
+  b.officer(1, '城内', -20, C.z1 + 18, '城内将');
+  b.general(1, 0, C.zb - 24, 4);
+  // Red: the raiders
+  b.reg(0, 'ram', 1, 1, 0, -2, '破城槌', { wing: '中央', fixed: true });
+  b.reg(0, 'sword', 14, 5, -L * 0.55, -14, '第1大隊', { wing: '中央', q: 0.65 });
+  b.reg(0, 'sword', 14, 5, 0, -20, '第2大隊', { wing: '中央', q: 0.65 });
+  b.reg(0, 'sword', 14, 5, L * 0.55, -14, '第3大隊', { wing: '中央', q: 0.65 });
+  b.reg(0, 'archer', 16, 3, -L * 0.8, -2, '弓兵隊 右', { wing: '右翼' });
+  b.reg(0, 'archer', 16, 3, L * 0.8, -2, '弓兵隊 左', { wing: '左翼' });
+  b.reg(0, 'sling', 14, 3, L * 0.28, 2, '投石兵', { wing: '中央' });
+  b.reg(0, 'engineer', 10, 2, -L * 0.4, -30, '梯子隊 I', { wing: '右翼', q: 0.65 });
+  b.reg(0, 'engineer', 10, 2, L * 0.4, -30, '梯子隊 II', { wing: '左翼', q: 0.65 });
+  b.reg(0, 'sword', 14, 5, -L * 0.3, -44, '第4大隊', { wing: '予備', role: 'reserve', q: 0.7 });
+  b.reg(0, 'onager', 2, 1, 0, -50, '投石機隊', { wing: '中央', fixed: true });
+  b.reg(0, 'cav', 8, 3, -L * 1.5, -40, '騎兵', { wing: '予備', role: 'reserve' });
+  b.reg(0, 'dog', 8, 2, L * 1.5, -36, '軍用犬', { wing: '予備', role: 'reserve' });
+  b.officer(0, '右翼', -L * 0.8, -36, '右翼将');
+  b.officer(0, '中央', 0, -34, '中央将');
+  b.officer(0, '左翼', L * 0.8, -36, '左翼将');
+  b.officer(0, '予備', -L * 0.2, -66, '予備将');
+  b.general(0, 0, -76, 6);
 }

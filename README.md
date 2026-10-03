@@ -18,15 +18,26 @@ npm run dev        # http://localhost:5173/
 npm run build      # static build in dist/
 ```
 
-URL parameters: `?stage=field|river|siege`, `?weather=clear|fog|rain|dusk|night`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
+URL parameters: `?stage=field|hills|forest|canyon|river|ford|bridge|harbor|siege|camp`, `?weather=clear|fog|rain|dusk|night`, `?mode=annihilate|capture|reinforce|retreat`, `?cam=cine|free|follow`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
 
 ## Stages
 
 | Stage | Description |
 |---|---|
 | Open field | A pitched battle. Engineers drive anti-cavalry stakes before the fighting starts. |
+| Hills | Two round hills flank the field. The high ground hits harder and uphill is slow going; each side's missile troops start on a hill. |
+| Forest | Woods across the middle, every tree a solid block: men walk around them and arrows stop in them. Only a few lanes and glades are open, so the armies funnel through. |
+| Canyon | Sheer cliffs close to a narrow neck. Formations form up narrower and deeper. |
 | River crossing | A stone bridge, a wooden bridge and a ford. Regiments funnel into columns to cross. Defending engineers can destroy the wooden bridge, attacking engineers build a pontoon bridge. Men pushed into the river swim or drown. |
+| Ford | Shallows all along the river, with a few deep pools. No bridges. |
+| Broken bridge | Deep water and a single wooden bridge that the defenders tear down as the attackers approach; two pontoon sites. |
+| Harbour | A wide channel with no crossing at all and moored boats on the far bank: three engineer companies throw pontoon bridges under fire. |
 | Siege | A walled city with towers, a gate and houses. A battering ram breaks the gate, engineers carry and raise ladders, onagers hurl rocks at the walls. Defenders push ladders down; reserves inside the city fight at the breach. |
+| Camp raid | A palisaded army camp: lower, smaller, tents instead of houses; the same ladders, ram and gate. |
+
+**Weather** (`?weather=`): fog and night shorten sight, rain slows the march and spoils aim, dusk is just for looks.
+
+**Victory conditions** (`?mode=`): *annihilate* (default); *capture* a flag (the defenders win by holding out); *reinforce* (fresh regiments arrive mid-battle, including a relief force behind the besiegers); *retreat* (open ground only: get half the Legion off the field before time runs out while the Kingdom's army is on its heels).
 
 The world is a height field plus a raster of man-made floors: walls are plateaus, ladders are steep ramps and bridges are causeways over water.
 Pathfinding uses A* on a 2 m grid with connected-component checks, so impossible routes fail instantly. Regiments snake along their path and automatically narrow into columns in tight passages.
@@ -102,14 +113,16 @@ src/
   terrain.js          height API (backed by the stage), terrain / water / scenery meshes
   scenario.js         army deployments and chain of command per stage
   sound.js            procedural WebAudio sound effects (no assets)
+  weather.js          sky, fog, light, rain and stars for each weather, and its effect on the battle
   music.js            procedural background music (bass, war drums, a short melody)
   anim/human.js       procedural human animation
   anim/quadruped.js   horse / camel / dog rig and the elephant
-  sim/stage.js        stages: terrain, structure raster, bridges, ladders, gate, stakes
+  sim/stage.js        stages: terrain, structure raster, bridges, ladders, gate, stakes, forest
   sim/nav.js          navigation grid, A*, connected components, clearance
   sim/agent.js        soldiers (stats, morale, stamina) and regiments (path-following formations)
   sim/world.js        update loop, collisions and impacts, combat, falls and water, missiles, order API
   sim/ai.js           regiment and individual behaviour
+  sim/objective.js    victory conditions: capture, reinforcements, retreat
   sim/command.js      chain of command, morale auras, hierarchical AI, stage plans
   sim/engineering.js  engineer tasks and siege engines
   sim/projectiles.js  arrows, javelins, sling stones, bolts, onager rocks

@@ -59,7 +59,7 @@ export class World {
     a.prevX = a.x; a.prevZ = a.z;
     return a;
   }
-  start() { if (this.phase === 'deploy') { this.phase = 'battle'; this.emit('start'); } }
+  start() { if (this.phase === 'deploy') { this.phase = 'battle'; this.battleT0 = this.time; this.emit('start'); } }
 
   // ------------------------------------------------------------- grid
   buildGrid() {
@@ -170,6 +170,7 @@ export class World {
       }
     }
     if (this.command) this.command.update(dt);
+    if (this.objective) this.objective.update(dt);
     for (const r of this.regs) if (r.order !== 'dead') AI.updateRegiment(this, r, dt);
     if (this.engineering) this.engineering.update(dt);
     const A = this.agents, sn = this.stepN;

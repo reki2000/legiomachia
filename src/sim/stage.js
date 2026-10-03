@@ -257,6 +257,7 @@ function buildForest(st) {
   const S = st.S, half = Math.min(470, Math.round(215 * S)), band = 36;
   st.initRaster(-half, -band - 8, half, band + 8);
   const lanes = [-0.62 * half, 0.04 * half, 0.55 * half];
+  st.forestLaneX = lanes[1];
   const glades = [[-0.3 * half, 6, 22], [0.3 * half, -8, 20]];
   st.trees = [];
   for (let cx = -half; cx < half; cx += 2) {
@@ -317,37 +318,61 @@ function buildRiver(st) {
   }
 }
 
+// Siege family. siege: a walled city. camp: a palisaded army camp, much smaller and lower,
+// with tents instead of houses (the ladders, gate and ram work the same way).
 function buildSiege(st) {
-  const S = st.S;
-  const L = Math.round(120 * S / 2) * 2;
-  const C = st.city = { L, z0: 40, z1: 44, zb: 40 + Math.round(110 * S / 2) * 2, H: 7, T: 4 };
+  const S = st.S, camp = st.id === 'camp';
+  const L = camp ? Math.round(56 * S / 2) * 2 : Math.round(120 * S / 2) * 2;
+  const depth = camp ? Math.round(72 * S / 2) * 2 : Math.round(110 * S / 2) * 2;
+  const C = st.city = { L, z0: 40, z1: 44, zb: 40 + depth, H: camp ? 3.4 : 7, T: 4, camp };
   const H = C.H;
   st.initRaster(-L - 20, C.z0 - 16, L + 20, C.zb + 16);
-  const wall = (x0, z0, x1, z1) => { st.setRect(x0, z0, x1, z1, H, F_WALL); st.structs.push({ type: 'wall', x0, z0, x1, z1, h: H }); };
+  const wall = (x0, z0, x1, z1) => { st.setRect(x0, z0, x1, z1, H, F_WALL); st.structs.push({ type: 'wall', x0, z0, x1, z1, h: H, palisade: camp }); };
   // south wall (facing the attacker), drawn in two pieces so the gate can open a real hole
   st.setRect(-L - 4, C.z0, L + 4, C.z1, H, F_WALL);
-  st.structs.push({ type: 'wall', x0: -L - 4, z0: C.z0, x1: -4, z1: C.z1, h: H });
-  st.structs.push({ type: 'wall', x0: 4, z0: C.z0, x1: L + 4, z1: C.z1, h: H });
+  st.structs.push({ type: 'wall', x0: -L - 4, z0: C.z0, x1: -4, z1: C.z1, h: H, palisade: camp });
+  st.structs.push({ type: 'wall', x0: 4, z0: C.z0, x1: L + 4, z1: C.z1, h: H, palisade: camp });
   wall(-L - 4, C.z0, -L, C.zb + 4);          // west
   wall(L, C.z0, L + 4, C.zb + 4);            // east
   wall(-L - 4, C.zb, L + 4, C.zb + 4);       // north
   // towers along the south wall
   const towerX = [-L, -8, 8, L];
-  for (let x = -L + 40; x < -12; x += 40) towerX.push(x);
-  for (let x = L - 40; x > 12; x -= 40) towerX.push(x);
+  if (!camp) {
+    for (let x = -L + 40; x < -12; x += 40) towerX.push(x);
+    for (let x = L - 40; x > 12; x -= 40) towerX.push(x);
+  }
   for (const tx of towerX) {
     st.setRect(tx - 4, C.z0 - 2, tx + 4, C.z1 + 2, H, F_TOWER);
-    st.structs.push({ type: 'tower', x0: tx - 4, z0: C.z0 - 2, x1: tx + 4, z1: C.z1 + 2, h: H + 4 });
+    st.structs.push({ type: 'tower', x0: tx - 4, z0: C.z0 - 2, x1: tx + 4, z1: C.z1 + 2, h: H + 4, palisade: camp });
   }
   // gate (a solid block in the wall until it is broken)
-  const g = { x0: -4, x1: 4, z0: C.z0, z1: C.z1, hp: 2600, maxHp: 2600, alive: true, cx: 0, cz: C.z0 };
+  const gp = camp ? 1500 : 2600;
+  const g = { x0: -4, x1: 4, z0: C.z0, z1: C.z1, hp: gp, maxHp: gp, alive: true, cx: 0, cz: C.z0 };
   st.setRect(g.x0, g.z0, g.x1, g.z1, H, F_GATE);
   st.gates.push(g);
   // stair ramps on the inner face of the south wall
-  for (const x0 of [-L + 10, -60 * S, 44 * S, L - 26]) {
+  const ramps = camp ? [-L + 8, L - 24] : [-L + 10, -60 * S, 44 * S, L - 26];
+  for (const x0 of ramps) {
     const xs = Math.round(x0 / 2) * 2;
     st.setRect(xs, C.z1, xs + 16, C.z1 + 4, (x) => H * clamp((x - xs) / 16, 0, 1), F_RAMP);
     st.structs.push({ type: 'ramp', x0: xs, z0: C.z1, x1: xs + 16, z1: C.z1 + 4, h: H });
+  }
+  if (camp) {
+    // tents in rows, a wide lane behind the gate and a big command tent at the back
+    for (let z = C.z1 + 12; z < C.zb - 16; z += 11) {
+      for (let x = -L + 10; x < L - 12; x += 11) {
+        if (Math.abs(x + 2) < 14 && z < C.z1 + 44) continue;
+        if (Math.abs(x + 2) < 4) continue;
+        if (rand() < 0.2) continue;
+        const w = randRange(4.5, 6), d = randRange(4, 5.5), h = randRange(2.2, 3);
+        const x0 = x + randRange(0, 2), z0 = z + randRange(0, 2);
+        st.setRect(x0, z0, x0 + w, z0 + d, h, F_HOUSE);
+        st.structs.push({ type: 'tent', x0, z0, x1: x0 + w, z1: z0 + d, h });
+      }
+    }
+    st.setRect(-6, C.zb - 18, 6, C.zb - 8, 4.2, F_HOUSE);
+    st.structs.push({ type: 'tent', x0: -6, z0: C.zb - 18, x1: 6, z1: C.zb - 8, h: 4.2, big: true });
+    return;
   }
   // houses
   for (let z = C.z1 + 16; z < C.zb - 12; z += 18) {

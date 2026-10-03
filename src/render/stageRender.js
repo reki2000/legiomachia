@@ -5,6 +5,7 @@ import { rand, setSeed } from '../util.js';
 import { col } from './segments.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const C_RED_FLAG = col(0xc03030), C_BLUE_FLAG = col(0x3a5ac8), C_NEUTRAL = col(0xcfc8b0);
 const C_WOOD = col(0x6e4e2e), C_WOOD2 = col(0x8a6a40), C_ROPE = col(0x9a8a60), C_DARK = col(0x3a2a1a);
 
 export class StageRenderer {
@@ -14,16 +15,32 @@ export class StageRenderer {
     scene.add(this.group);
     setSeed(777);
     const boxes = []; // [cx, cy, cz, sx, sy, sz, color, rotY]
-    const roofs = [];
+    const roofs = [], tents = [], tentsBig = [];
     const add = (x0, y0, z0, x1, y1, z1, c) => boxes.push([(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, c]);
     this.gateMeshes = [];
     this.bridgeGroups = new Map();
-    const stoneC = [0x9a8f7a, 0x958a74, 0xa39884];
+    const stoneC = [0x9a8f7a, 0x958a74, 0xa39884], woodC = [0x7a5a38, 0x6e4e2e, 0x84643e];
     if (stage.city) {
       const C = stage.city, H = C.H;
       for (const s of stage.structs) {
         const c = stoneC[Math.floor(rand() * 3)];
-        if (s.type === 'wall') {
+        if (s.type === 'wall' && s.palisade) {
+          // a log wall: solid body and a row of sharpened posts along the outer edge
+          const wc = woodC[Math.floor(rand() * 3)];
+          add(s.x0, -2, s.z0, s.x1, H, s.z1, wc);
+          if (s.x1 - s.x0 > s.z1 - s.z0) {
+            const outer = s.z0 === C.z0 ? s.z0 - 0.1 : s.z1 - 0.5;
+            for (let x = s.x0 + 0.3; x < s.x1 - 0.3; x += 0.7) add(x, H - 0.3, outer, x + 0.5, H + 0.5 + rand() * 1.3, outer + 0.5, woodC[Math.floor(rand() * 3)]);
+          } else {
+            const outer = s.x0 < 0 ? s.x0 - 0.1 : s.x1 - 0.5;
+            for (let z = s.z0 + 0.3; z < s.z1 - 0.3; z += 0.7) add(outer, H - 0.3, z, outer + 0.5, H + 0.5 + rand() * 1.3, z + 0.5, woodC[Math.floor(rand() * 3)]);
+          }
+        } else if (s.type === 'tower' && s.palisade) {
+          add(s.x0, -2, s.z0, s.x1, H + 0.05, s.z1, 0x6e4e2e);
+          for (const [px, pz] of [[s.x0, s.z0], [s.x1 - 0.6, s.z0], [s.x0, s.z1 - 0.6], [s.x1 - 0.6, s.z1 - 0.6]]) add(px, H, pz, px + 0.6, H + 2.6, pz + 0.6, 0x5a3e24);
+        } else if (s.type === 'tent') {
+          (s.big ? tentsBig : tents).push([(s.x0 + s.x1) / 2, 0, (s.z0 + s.z1) / 2, s.x1 - s.x0, s.h, s.z1 - s.z0]);
+        } else if (s.type === 'wall') {
           add(s.x0, -2, s.z0, s.x1, H, s.z1, c);
           // crenellations along the outer edges
           const alongX = s.x1 - s.x0 > s.z1 - s.z0;
@@ -61,7 +78,7 @@ export class StageRenderer {
         bands.position.set((g.x0 + g.x1) / 2, 1.5, g.z0 + 0.6);
         const bands2 = bands.clone(); bands2.position.y = 4;
         // stone filling the wall thickness around the doors, so the wall looks solid until the gate falls
-        const body = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, H + 2, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: 0x9a8f7a, flatShading: true }));
+        const body = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, H + 2, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: C.camp ? 0x7a5a38 : 0x9a8f7a, flatShading: true }));
         ps1Hook(body.material);
         body.position.set((g.x0 + g.x1) / 2, (H - 2) / 2, (g.z0 + g.z1) / 2);
         const merl = [];
@@ -122,6 +139,16 @@ export class StageRenderer {
       }
     }
     if (boxes.length) this.group.add(this.makeBoxes(boxes, ps1Hook));
+    for (const [list, color] of [[tents, 0xd9cfae], [tentsBig, 0xb8493a]]) {
+      if (!list.length) continue;
+      const g = new THREE.ConeGeometry(0.72, 1, 5).translate(0, 0.5, 0);
+      const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+      ps1Hook(mat);
+      const im = new THREE.InstancedMesh(g, mat, list.length);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      list.forEach((r, i) => { p.set(r[0], r[1], r[2]); sc.set(r[3] * 1.35, r[4], r[5] * 1.35); q.setFromAxisAngle(UP, i * 0.7); m.compose(p, q, sc); im.setMatrixAt(i, m); });
+      this.group.add(im);
+    }
     if (roofs.length) {
       const g = new THREE.ConeGeometry(0.72, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0);
       const mat = new THREE.MeshLambertMaterial({ color: 0xa0503a, flatShading: true });
@@ -217,6 +244,35 @@ export class StageRenderer {
           const x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
           box.seg(x - 0.3, y, z, x + 0.3, y, z, 0, 1, 0, 0.05, 0.05, C_WOOD);
         }
+      }
+    }
+    // objective markers: the flag and ring of a capture point, the line of flags at the exit
+    const obj = world.objective;
+    if (obj && obj.point) {
+      const p = obj.point, m = obj.meter, a = Math.min(1, Math.abs(m));
+      const tint = m > 0 ? C_RED_FLAG : C_BLUE_FLAG;
+      const c = [C_NEUTRAL[0] + (tint[0] - C_NEUTRAL[0]) * a, C_NEUTRAL[1] + (tint[1] - C_NEUTRAL[1]) * a, C_NEUTRAL[2] + (tint[2] - C_NEUTRAL[2]) * a];
+      const y = st.floorAt(p.x, p.z);
+      if (visible(p.x, y + 3, p.z, p.r + 10)) {
+        box.seg(p.x, y, p.z, p.x, y + 7.5, p.z, 1, 0, 0, 0.2, 0.2, C_WOOD);
+        const sway = Math.sin(world.time * 2.5) * 0.25;
+        box.seg(p.x, y + 7.0, p.z, p.x + 2.4, y + 7.0, p.z + sway, 0, 1, 0, 1.3, 0.05, c);
+        const N = 48;
+        for (let i = 0; i < N; i++) {
+          const a0 = i / N * Math.PI * 2, a1 = (i + 1) / N * Math.PI * 2;
+          const x0 = p.x + Math.cos(a0) * p.r, z0 = p.z + Math.sin(a0) * p.r, x1 = p.x + Math.cos(a1) * p.r, z1 = p.z + Math.sin(a1) * p.r;
+          if (i % 2) continue; // dashed
+          box.seg(x0, st.floorAt(x0, z0) + 0.2, z0, x1, st.floorAt(x1, z1) + 0.2, z1, 0, 1, 0, 0.35, 0.06, c);
+        }
+      }
+    }
+    if (obj && obj.exit) {
+      const z = obj.exit.z;
+      for (let x = -260; x <= 260; x += 10) {
+        const y = st.floorAt(x, z);
+        if (!visible(x, y + 2, z, 6)) continue;
+        box.seg(x, y, z, x, y + 4, z, 1, 0, 0, 0.12, 0.12, C_WOOD);
+        box.seg(x, y + 3.9, z, x + 1.1, y + 3.9, z, 0, 1, 0, 0.7, 0.04, C_RED_FLAG);
       }
     }
     // pontoon bridges: boats and planks
