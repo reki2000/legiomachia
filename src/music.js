@@ -1,30 +1,102 @@
 // Procedural background music: no assets. A driving bass line and war drums carry the
-// piece, with a short melody over a drone in D phrygian dominant that comes and goes.
+// piece; a melody over a drone in D phrygian dominant comes and goes across a song of
+// about three minutes (intro, march, melody, break, lift, bridge, climax, outro).
 // Scheduled with a small look-ahead on the shared AudioContext.
 const BPM = 92;
 const STEP = 60 / BPM / 4;            // one sixteenth note
-const BARS = 8;                        // length of the loop
 const D2 = 73.416;
 
 const hz = (root, semis) => root * Math.pow(2, semis / 12);
 
-// bass root per bar, in semitones above D2 (D D Eb D | D D C D)
-const BASS_ROOT = [0, 0, 1, 0, 0, 0, -2, 0];
-// 16th-step -> interval above the bar's root (semitones)
-const BASS_PAT = { 0: 0, 3: 0, 6: 12, 8: 0, 10: 7, 11: 0, 14: 12 };
-const BASS_PAT_B = { 0: 0, 2: 0, 4: 12, 6: 0, 8: 0, 11: 7, 12: 0, 14: -2 };
+// ---------------------------------------------------------------- composition
+// Everything is D phrygian dominant (D Eb F# G A Bb C). A song is a list of sections;
+// each one picks a key, a bass line, a drum feel and which phrases the lead plays.
 
-const KICK = new Set([0, 3, 8, 11]);
-const CLAP = new Set([4, 12]);
-const TOM = { 6: 1.0, 10: 0.8, 14: 1.2 };
-
-// melody, bars 4-7 of each loop: [step, semitones above D4, length in steps]
-const MELODY = {
-  4: [[0, 7, 3], [3, 8, 1], [4, 7, 2], [6, 4, 2], [8, 5, 4], [12, 4, 2], [14, 1, 2]],
-  5: [[0, 0, 6], [8, 4, 2], [10, 5, 2], [12, 7, 4]],
-  6: [[0, 12, 3], [3, 11, 1], [4, 8, 2], [6, 7, 2], [8, 5, 3], [11, 4, 1], [12, 5, 2], [14, 7, 2]],
-  7: [[0, 4, 4], [4, 1, 2], [6, 0, 10]],
+// bass: 16th-step -> interval above the bar's root (semitones)
+const BASS = {
+  A: { 0: 0, 3: 0, 6: 12, 8: 0, 10: 7, 11: 0, 14: 12 },
+  B: { 0: 0, 2: 0, 4: 12, 6: 0, 8: 0, 11: 7, 12: 0, 14: -2 },
+  drive: { 0: 0, 2: 0, 4: 12, 6: 0, 8: 7, 10: 0, 12: 12, 14: 10 },
+  long: { 0: 0 },
+  sparse: { 0: 0, 8: 0 },
 };
+const BASS_LEN = { long: 14 };
+
+// melody phrases: four bars each, [step, semitones above D4, length in steps]
+const PHRASE = {
+  m1: [
+    [[0, 7, 3], [3, 8, 1], [4, 7, 2], [6, 4, 2], [8, 5, 4], [12, 4, 2], [14, 1, 2]],
+    [[0, 0, 6], [8, 4, 2], [10, 5, 2], [12, 7, 4]],
+    [[0, 12, 3], [3, 11, 1], [4, 8, 2], [6, 7, 2], [8, 5, 3], [11, 4, 1], [12, 5, 2], [14, 7, 2]],
+    [[0, 4, 4], [4, 1, 2], [6, 0, 10]],
+  ],
+  m1b: [
+    [[0, 7, 3], [3, 8, 1], [4, 7, 2], [6, 4, 2], [8, 5, 4], [12, 4, 2], [14, 1, 2]],
+    [[0, 0, 6], [8, 4, 2], [10, 5, 2], [12, 8, 4]],
+    [[0, 12, 3], [3, 11, 1], [4, 8, 2], [6, 7, 2], [8, 5, 3], [11, 4, 1], [12, 5, 2], [14, 7, 2]],
+    [[0, 5, 4], [4, 4, 2], [6, 1, 2], [8, 0, 8]],
+  ],
+  // higher and more rhythmic: used when the song lifts
+  m2: [
+    [[0, 12, 2], [2, 12, 2], [4, 13, 2], [6, 12, 2], [8, 8, 4], [12, 7, 4]],
+    [[0, 8, 2], [2, 7, 2], [4, 5, 4], [8, 4, 2], [10, 5, 2], [12, 7, 4]],
+    [[0, 12, 2], [2, 12, 2], [4, 13, 2], [6, 12, 2], [8, 16, 4], [12, 13, 2], [14, 12, 2]],
+    [[0, 12, 6], [8, 8, 2], [10, 7, 2], [12, 4, 4]],
+  ],
+  // slow and lyrical, over the half-time bridge
+  m3: [
+    [[0, 7, 8], [8, 8, 4], [12, 7, 4]],
+    [[0, 4, 8], [8, 5, 8]],
+    [[0, 7, 6], [6, 8, 2], [8, 12, 8]],
+    [[0, 11, 8], [8, 7, 8]],
+  ],
+};
+
+// drum feels: which sixteenths carry what
+const KICK = {
+  groove: [0, 3, 8, 11], dbl: [0, 3, 6, 8, 11, 14], half: [0], sparse: [0],
+};
+const CLAP = { groove: [4, 12], dbl: [4, 12], half: [8], sparse: [] };
+const TOM = {
+  groove: { 6: 1.0, 10: 0.8, 14: 1.2 },
+  dbl: { 2: 0.7, 10: 0.8, 15: 1.1 },
+  half: { 12: 1.0, 14: 1.2 },
+  sparse: { 8: 0.8 },
+};
+
+// [bars, key (semitones above D), bass, drums, roots per bar (semitones above the key), lead phrase(s), options]
+const SECTIONS = [
+  // intro: a pulse and a drone
+  { bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
+  // the march gets going
+  { bars: 8, key: 0, bass: 'A', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0] },
+  // first melody
+  { bars: 8, key: 0, bass: 'A', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['m1', 'm1b'], pad: true },
+  // break: drums drop out, tom roll into the lift
+  { bars: 4, key: 0, bass: 'long', drums: 'roll', roots: [0, 1, 0, -2], pad: true },
+  // lifted section a fourth higher, busier drums, higher melody
+  { bars: 16, key: 5, bass: 'drive', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['m2', 'm2', 'm1', 'm2'], pad: true },
+  // bridge: half time, long bass notes, slow melody
+  { bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: ['m3', 'm3'], pad: true },
+  // climax: back home, busiest, lead doubled
+  { bars: 16, key: 0, bass: 'B', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['m2', 'm1b', 'm2', 'm1'], pad: true, harm: true },
+  // outro: thin out and fall back into the loop
+  { bars: 8, key: 0, bass: 'sparse', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true },
+];
+
+// flatten into one entry per bar
+const SONG = [];
+for (const sec of SECTIONS) {
+  for (let i = 0; i < sec.bars; i++) {
+    const phrase = sec.lead && sec.lead[Math.floor(i / 4)];
+    SONG.push({
+      key: sec.key, root: sec.key + sec.roots[i % sec.roots.length], bass: sec.bass, drums: sec.drums,
+      lead: phrase ? PHRASE[phrase][i % 4] : null, pad: !!sec.pad, harm: !!sec.harm,
+      last: i === sec.bars - 1, firstOfSection: i === 0,
+    });
+  }
+}
+const BARS = SONG.length;             // ~ 3 minutes before the loop comes round
 
 export class Music {
   constructor(ctx, noise, dest) {
@@ -74,25 +146,55 @@ export class Music {
   }
 
   schedule(n, t) {
-    const bar = Math.floor(n / 16), s = n % 16;
+    const bar = Math.floor(n / 16) % BARS, s = n % 16;
+    const B = SONG[bar];
     // ease the felt intensity so the music swells and settles instead of switching
     this.level += (this.intensity - this.level) * 0.004;
-    const lv = this.level, full = lv > 0.55;
+    const full = this.level > 0.55;
+    // before the battle only the pulse and the drone play
+    const drums = full ? B.drums : 'sparse', bassKind = full ? B.bass : 'sparse';
+    // pad: a held chord under the bar
+    if (s === 0 && B.pad) this.pad(B.root, t, STEP * 16, full ? 0.07 : 0.05);
     // bass
-    const pat = bar % 4 === 3 ? BASS_PAT_B : BASS_PAT;
-    const iv = pat[s];
-    if (iv !== undefined && (full || s % 8 === 0)) this.bass(hz(D2, BASS_ROOT[bar] + iv), t, STEP * (s === 0 ? 2.6 : 1.6), full ? 0.34 : 0.26);
+    const iv = BASS[bassKind][s];
+    if (iv !== undefined) this.bass(hz(D2, B.root + iv), t, STEP * (BASS_LEN[bassKind] || (s === 0 ? 2.6 : 1.6)), full ? 0.34 : 0.26);
     // drums
-    const fill = bar % 4 === 3 && s >= 12;
-    if (KICK.has(s) && (full || s % 8 === 0) && !fill) this.kick(t, full ? 0.9 : 0.6);
-    if (full) {
-      if (CLAP.has(s)) this.clap(t, 0.5);
-      if (TOM[s] && !fill) this.tom(t, TOM[s], 0.5);
+    const fillBar = full && (bar % 4 === 3 || B.last) && drums !== 'roll' && drums !== 'half';
+    const fill = fillBar && s >= 12;
+    if (drums === 'roll') {
+      // build: toms every sixteenth, getting louder and higher through the section
+      const k = (n % (16 * 4)) / (16 * 4);
+      if (full) this.tom(t, 0.8 + k * 0.5, 0.25 + k * 0.45, 1.1 - k * 0.2 + (s % 4 === 0 ? 0.15 : 0));
+      if (s === 0 && B.firstOfSection) this.kick(t, 0.9);
+    } else {
+      if (KICK[drums].includes(s) && !fill) this.kick(t, full ? 0.9 : 0.6);
+      if (CLAP[drums].includes(s)) this.clap(t, 0.5);
+      if (TOM[drums][s] && !fill) this.tom(t, TOM[drums][s], full ? 0.5 : 0.3);
       if (fill) this.tom(t, 0.9 + (s - 12) * 0.12, 0.6, 1.4 - (s - 12) * 0.12);
-      if (s % 2 === 0) this.shaker(t, s % 4 === 0 ? 0.16 : 0.09);
-    } else if (s === 8) this.tom(t, 0.8, 0.3);
-    // melody
-    if (full && bar >= 4) for (const [st, semi, len] of MELODY[bar]) if (st === s) this.lead(hz(293.66, semi), t, STEP * len);
+      if (full && (drums === 'dbl' ? true : s % 2 === 0)) this.shaker(t, s % 4 === 0 ? 0.16 : 0.09);
+    }
+    // melody (and a lower second voice in the climax)
+    if (full && B.lead) for (const [st, semi, len] of B.lead) if (st === s) {
+      const f = hz(293.66, semi + B.key);
+      this.lead(f, t, STEP * len);
+      if (B.harm) this.lead(f * 0.75, t, STEP * len, 0.07);
+    }
+  }
+
+  // sustained chord (root, fifth, major third an octave up), slow attack
+  pad(root, t, dur, g) {
+    const ctx = this.ctx;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.7;
+    lp.frequency.setValueAtTime(380, t); lp.frequency.linearRampToValueAtTime(900, t + dur * 0.6);
+    lp.frequency.linearRampToValueAtTime(420, t + dur);
+    const gn = ctx.createGain();
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.linearRampToValueAtTime(g, t + dur * 0.35);
+    gn.gain.linearRampToValueAtTime(0.0001, t + dur + 0.2);
+    lp.connect(gn).connect(this.out);
+    for (const [iv, det] of [[0, -6], [0, 6], [7, -4], [7, 5], [16, 0]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(D2 * 2, root + iv); o.detune.value = det;
+      o.connect(lp); o.start(t); o.stop(t + dur + 0.3);
+    }
   }
 
   bass(f, t, dur, g) {
@@ -138,7 +240,7 @@ export class Music {
     s.connect(flt).connect(gn).connect(this.out);
     s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
   }
-  lead(f, t, dur) {
+  lead(f, t, dur, g = 0.13) {
     const ctx = this.ctx;
     const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
     const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 1.004;
@@ -148,8 +250,8 @@ export class Music {
     lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 1.2;
     const gn = ctx.createGain();
-    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(0.13, t + 0.03);
-    gn.gain.setValueAtTime(0.13, t + Math.max(0.04, dur - 0.08));
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(g, t + 0.03);
+    gn.gain.setValueAtTime(g, t + Math.max(0.04, dur - 0.08));
     gn.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
     o.connect(lp); o2.connect(lp); lp.connect(gn);
     gn.connect(this.out); gn.connect(this.echo);

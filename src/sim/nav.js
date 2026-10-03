@@ -156,6 +156,21 @@ export class Nav {
     if (this.trivial) return 1e6;
     return this.clear[this.cellOf(x, z)];
   }
+  // width of the walkable corridor through (x,z), measured across the unit direction (px,pz)
+  corridorWidth(x, z, px, pz, cls) {
+    if (this.trivial) return 1e6;
+    let total = 0;
+    for (const sgn of [1, -1]) {
+      let c = this.cellOf(x, z), reach = 0;
+      for (let d = 0.5; d <= 14; d += 0.5) {
+        const c2 = this.cellOf(x + px * sgn * d, z + pz * sgn * d);
+        if (c2 !== c) { if (!this.stepOK(c, c2, cls)) break; c = c2; }
+        reach = d;
+      }
+      total += reach;
+    }
+    return total;
+  }
   // can a unit walk straight from A to B?
   raycast(x0, z0, x1, z1, cls) {
     if (this.trivial) return true;

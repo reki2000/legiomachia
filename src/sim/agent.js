@@ -210,14 +210,23 @@ export class Regiment {
     const n = Math.max(1, this.alive);
     if (!this.path || nav.trivial) { this.effCols = Math.min(this.cols, Math.max(1, n)); return; }
     const tmp = { x: 0, z: 0 };
-    const depth = Math.ceil(n / this.effCols) * this.spZ * this.fs;
-    let minC = 1e9;
-    for (const d of [-5, 0, depth * 0.5, depth]) {
-      this.pointAt(this.pathS - d, tmp);
-      minC = Math.min(minC, nav.clearanceAt(tmp.x, tmp.z));
+    // how far back the body of the unit reaches (capped: a 1-wide column of 200 men is
+    // 250 m long, and measuring that far back made the narrow state sticky)
+    const depth = Math.min(30, Math.ceil(n / this.effCols) * this.spZ * this.fs);
+    // narrowest stretch of the route under the unit, measured across the direction of travel
+    // (a bridge is as wide as its deck; the cleared distance to the nearest obstacle
+    // would read 1-3 m on a 10 m bridge whenever the route is off-centre)
+    let width = 1e9;
+    const cls = this.kind === K_INF ? 0 : 1;
+    for (const d of [-8, 0, depth * 0.5, depth]) {
+      // behind the start of the route there is no route: skip those samples
+      if (this.pathS - d < 0 && d > 0) continue;
+      // nor beyond its end (the straight-line extension would run off the bridge into the water)
+      this.pointAt(Math.min(this.pathS - d, this.pathEnd()), tmp);
+      width = Math.min(width, nav.corridorWidth(tmp.x, tmp.z, -tmp.tz, tmp.tx, cls));
     }
-    const width = minC * 2 - 1.2;
-    const want = clamp(Math.floor(width / (this.spX * this.fs)), 1, this.cols);
+    // two men abreast need under 2 m: never squeeze a unit into single file where that fits
+    const want = clamp(Math.max(Math.floor((width - 0.6) / (this.spX * this.fs)), width >= 3 ? 2 : 1), 1, this.cols);
     // hysteresis so the unit does not re-shuffle every half second
     if (want < this.effCols || want > this.effCols + 1) this.effCols = want;
   }
