@@ -441,17 +441,18 @@ export class BodyRenderer {
         const st2 = a.st;
         if (a.state === S_ALIVE) {
           const every = lod === 0 ? 1 : lod === 1 ? 2 : 4;
+          const ay = a.y + a.yOff; // floor steps are eased out, see World.constrain
           if (!a.poseValid || (frame + a.id) % every === 0) {
-            const B = setBasisYaw(a.basis, a.x, a.y, a.z, a.heading);
+            const B = setBasisYaw(a.basis, a.x, ay, a.z, a.heading);
             if (lod === 2) poseHumanFar(j, st2, a.weapon, B);
             else poseHuman(j, st2, a.weapon, a.shield, SEAT_GROUND, B);
-            a.poseX = a.x; a.poseY = a.y; a.poseZ = a.z; a.poseValid = true;
+            a.poseX = a.x; a.poseY = ay; a.poseZ = a.z; a.poseValid = true;
           } else {
             // reuse last pose, just translated
-            const dx = a.x - a.poseX, dy = a.y - a.poseY, dz = a.z - a.poseZ;
+            const dx = a.x - a.poseX, dy = ay - a.poseY, dz = a.z - a.poseZ;
             if (dx || dy || dz) {
               for (let k = 0; k < j.length; k += 3) { j[k] += dx; j[k + 1] += dy; j[k + 2] += dz; }
-              a.poseX = a.x; a.poseY = a.y; a.poseZ = a.z;
+              a.poseX = a.x; a.poseY = ay; a.poseZ = a.z;
             }
           }
         } else if (a.state === S_GETUP) {

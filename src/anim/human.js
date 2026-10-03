@@ -367,8 +367,8 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
 
   // ---- whole-body overrides ----
   if (carry > 0) {
-    mixRel(rh, J.RSHO, -0.03, 0.42, 0.05, carry);
-    mixRel(lh, J.LSHO, 0.03, 0.42, 0.05, carry);
+    mixRel(rh, J.RSHO, -0.03, 0.02, 0.05, carry);
+    mixRel(lh, J.LSHO, 0.03, 0.02, 0.05, carry);
   }
   if (push > 0) {
     mixRel(rh, J.RSHO, -0.07, -0.1, 0.48, push);

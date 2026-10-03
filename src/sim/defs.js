@@ -58,15 +58,16 @@ export const SHIELD_FOR = {
 // quality: 0 = levy, 0.5 = regular, 1 = veteran
 export function genStats(quality) {
   const q = quality;
-  const size = clamp(1 + randNormal() * 0.055, 0.86, 1.15);
+  // wide spread: some men are visibly small, some are giants
+  const size = clamp(1 + randNormal() * 0.075, 0.8, 1.24);
   const r = v => Math.round(clamp(v, 5, 99));
   return {
     size,
-    str: r(45 + q * 22 + randNormal() * 12 + (size - 1) * 90),
-    spd: r(52 + q * 6 + randNormal() * 13 - (size - 1) * 70),
-    vit: r(46 + q * 18 + randNormal() * 12 + (size - 1) * 50),
-    def: r(38 + q * 32 + randNormal() * 12),
-    mor: r(40 + q * 34 + randNormal() * 14),
+    str: r(45 + q * 22 + randNormal() * 18 + (size - 1) * 110),
+    spd: r(52 + q * 6 + randNormal() * 18 - (size - 1) * 80),
+    vit: r(46 + q * 18 + randNormal() * 18 + (size - 1) * 60),
+    def: r(38 + q * 32 + randNormal() * 17),
+    mor: r(40 + q * 34 + randNormal() * 19),
   };
 }
 

@@ -4,6 +4,7 @@ import { floorBelow, waterLevel } from '../terrain.js';
 
 // [a, b, minFactor, maxFactor] relative to rest length taken from the initial pose
 const RIGID = 1;
+const MAX_UP = 6, MAX_H = 14; // m/s caps on the velocity a body may pick up from constraint corrections
 function buildConstraints(weaponHand) {
   const c = [];
   const add = (a, b, mn = RIGID, mx = RIGID) => c.push(a, b, mn, mx);
@@ -120,7 +121,12 @@ export class Ragdoll {
     let maxV2 = 0;
     const inv = 1 / dt;
     for (let i = 0; i < n3; i += 3) {
-      const vx = (p[i] - x[i]) * inv, vy = (p[i + 1] - x[i + 1]) * inv, vz = (p[i + 2] - x[i + 2]) * inv;
+      let vx = (p[i] - x[i]) * inv, vy = (p[i + 1] - x[i + 1]) * inv, vz = (p[i + 2] - x[i + 2]) * inv;
+      // position corrections (a limb dragged back over a wall edge, a foot pushed out of the
+      // floor) turn into velocity here; without a cap they launch the body tens of metres
+      if (vy > MAX_UP) vy = MAX_UP;
+      const h2 = vx * vx + vz * vz;
+      if (h2 > MAX_H * MAX_H) { const k = MAX_H / Math.sqrt(h2); vx *= k; vz *= k; }
       v[i] = vx; v[i + 1] = vy; v[i + 2] = vz;
       x[i] = p[i]; x[i + 1] = p[i + 1]; x[i + 2] = p[i + 2];
       const s2 = vx * vx + vy * vy + vz * vz;

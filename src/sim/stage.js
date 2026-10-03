@@ -233,7 +233,10 @@ function buildSiege(st) {
   const H = C.H;
   st.initRaster(-L - 20, C.z0 - 16, L + 20, C.zb + 16);
   const wall = (x0, z0, x1, z1) => { st.setRect(x0, z0, x1, z1, H, F_WALL); st.structs.push({ type: 'wall', x0, z0, x1, z1, h: H }); };
-  wall(-L - 4, C.z0, L + 4, C.z1);           // south (facing the attacker)
+  // south wall (facing the attacker), drawn in two pieces so the gate can open a real hole
+  st.setRect(-L - 4, C.z0, L + 4, C.z1, H, F_WALL);
+  st.structs.push({ type: 'wall', x0: -L - 4, z0: C.z0, x1: -4, z1: C.z1, h: H });
+  st.structs.push({ type: 'wall', x0: 4, z0: C.z0, x1: L + 4, z1: C.z1, h: H });
   wall(-L - 4, C.z0, -L, C.zb + 4);          // west
   wall(L, C.z0, L + 4, C.zb + 4);            // east
   wall(-L - 4, C.zb, L + 4, C.zb + 4);       // north

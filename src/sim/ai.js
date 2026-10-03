@@ -13,6 +13,21 @@ const tmpP = { x: 0, z: 0, tx: 0, tz: 1 };
 function homeZ(team) { return team === 0 ? -330 : 330; }
 
 // ======================================================================= regiments
+
+// Re-route a regiment, but keep the current route when the new one is not clearly
+// shorter: two near-equal detours would otherwise be picked in turn and the whole
+// unit would swing back and forth between them.
+function applyPath(reg, nav, cls, p) {
+  if (reg.path && p && p.length) {
+    let len = 0, px = reg.ax, pz = reg.az;
+    for (const q of p) { len += Math.hypot(q.x - px, q.z - pz); px = q.x; pz = q.z; }
+    const rem = reg.pathEnd() - reg.pathS;
+    let k = 1; while (k < reg.path.length - 1 && reg.pathL[k] <= reg.pathS) k++;
+    const next = reg.path[k];
+    if (len > rem * 0.85 && next && nav.raycast(reg.ax, reg.az, next.x, next.z, cls)) return;
+  }
+  reg.setPath(p || [{ x: reg.ax, z: reg.az }]);
+}
 export function updateRegiment(w, reg, dt) {
   let n = 0, sx = 0, sz = 0, eng = 0, mor = 0, sta = 0, flee = 0, fx = 0, fz = 0, fn = 0;
   for (const a of reg.agents) {
@@ -84,14 +99,14 @@ export function updateRegiment(w, reg, dt) {
     } else {
       reg.repathT -= dt;
       const moved = !reg.pathTarget || Math.hypot(reg.pathTarget.x - tr.cx, reg.pathTarget.z - tr.cz) > 8;
-      if (!reg.path || reg.pathVer !== nav.version || (reg.repathT <= 0 && moved && !reg.noPath)) {
+      if (!reg.path || (reg.repathT <= 0 && (reg.pathVer !== nav.version || moved && !reg.noPath))) {
         reg.repathT = 3; reg.pathVer = nav.version;
         reg.pathTarget = { x: tr.cx, z: tr.cz };
         let gx = tr.cx, gz = tr.cz;
         if (reg.flank && !reg.charging) { gx = reg.flank.x; gz = reg.flank.z; }
         const p = nav.findPath(reg.ax, reg.az, gx, gz, cls);
         reg.noPath = !p;
-        reg.setPath(p || [{ x: reg.ax, z: reg.az }]);
+        applyPath(reg, nav, cls, p);
       }
       const d = Math.hypot(tr.cx - reg.ax, tr.cz - reg.az) || 1;
       if (!reg.charging && d < T.chargeDist && (nav.trivial || nav.raycast(reg.ax, reg.az, tr.cx, tr.cz, cls))) {
@@ -136,7 +151,7 @@ export function updateRegiment(w, reg, dt) {
     reg.pointAt(reg.pathS, tmpS);
     reg.avx = (tmpS.x - reg.ax) / dt; reg.avz = (tmpS.z - reg.az) / dt;
     reg.ax = tmpS.x; reg.az = tmpS.z;
-    reg.facing = Math.atan2(tmpS.tx, tmpS.tz);
+    reg.turnTo(Math.atan2(tmpS.tx, tmpS.tz), dt, 1.6);
     if (reg.pathS >= reg.pathEnd() - 0.01) {
       reg.path = null;
       if (reg.order === 'move') { reg.order = 'hold'; }
@@ -162,9 +177,12 @@ function followLeader(w, reg, dt) {
   const L = reg.follow;
   if (!w.commanderAlive(L)) { reg.follow = null; return; }
   if (reg.order === 'charge') return;
-  const fx = Math.sin(L.heading), fz = Math.cos(L.heading);
+  // follow the leader's heading slowly: he fidgets and turns on the spot, and the
+  // guard must not orbit him every time he does
+  reg.turnTo(L.heading, dt, 0.35);
+  const fx = Math.sin(reg.facing), fz = Math.cos(reg.facing);
   reg.ax = L.x - fx * 7; reg.az = L.z - fz * 7;
-  reg.facing = L.heading; reg.tFacing = L.heading;
+  reg.tFacing = reg.facing;
   reg.order = 'hold'; reg.path = null;
 }
 

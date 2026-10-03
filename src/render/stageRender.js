@@ -59,8 +59,21 @@ export class StageRenderer {
         const bands = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0 - 0.2, 0.25, 0.9), new THREE.MeshLambertMaterial({ color: 0x3a3a40 }));
         bands.position.set((g.x0 + g.x1) / 2, 1.5, g.z0 + 0.6);
         const bands2 = bands.clone(); bands2.position.y = 4;
-        this.group.add(m, lint, bands, bands2);
-        this.gateMeshes.push({ g, meshes: [m, lint, bands, bands2], broken: false });
+        // stone filling the wall thickness around the doors, so the wall looks solid until the gate falls
+        const body = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, H + 2, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: 0x9a8f7a, flatShading: true }));
+        ps1Hook(body.material);
+        body.position.set((g.x0 + g.x1) / 2, (H - 2) / 2, (g.z0 + g.z1) / 2);
+        const merl = [];
+        for (let x = g.x0 + 0.5; x < g.x1 - 0.5; x += 2.2) {
+          const mm = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 0.5), body.material);
+          mm.position.set(x + 0.55, H + 0.55, g.z0 + 0.25);
+          merl.push(mm);
+        }
+        // the doors sit on the outer face, in front of the stone
+        m.position.z = g.z0 - 0.1; bands.position.z = g.z0 - 0.1; bands2.position.z = g.z0 - 0.1;
+        lint.visible = false;
+        this.group.add(body, m, bands, bands2, ...merl);
+        this.gateMeshes.push({ g, meshes: [body, m, bands, bands2, ...merl], broken: false });
       }
     }
     if (stage.river) {
@@ -146,7 +159,7 @@ export class StageRenderer {
       for (const l of st.ladders) {
         let ax, ay, az, bx, by, bz;
         if (l.state === 'carried' || l.state === 'dropped') {
-          const y = st.floorAt(l.cx, l.cz) + (l.state === 'carried' ? 2.05 : 0.1);
+          const y = st.floorAt(l.cx, l.cz) + (l.state === 'carried' ? 1.45 : 0.1);
           ax = l.cx; ay = y; az = l.cz - 3.4; bx = l.cx; by = y; bz = l.cz + 3.4;
         } else {
           const baseY = st.terrain(l.x, l.z0);

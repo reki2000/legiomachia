@@ -383,7 +383,11 @@ export class World {
       } else { this.fall(a, drop); return; }
     }
     a.swimming = deep(f);
-    a.y = a.swimming ? st.WL - 1.3 : f;
+    const ny = a.swimming ? st.WL - 1.3 : f;
+    // a step up or down of the floor (wall edge, bridge end, ramp) would pop the body
+    // by up to a metre in one frame: keep the old height as a visual offset that animInf eases out
+    if (inf && ny !== a.y && Math.abs(ny - a.y) < 1.2 && a.state === S_ALIVE) a.yOff = clamp(a.yOff + a.y - ny, -1.2, 1.2);
+    a.y = ny;
     a.climbing = !!lad;
     if (a.swimming && dt) {
       a.hp -= (a.kind === K_INF ? 3 : 5) * dt;
@@ -440,7 +444,8 @@ export class World {
       st.tick(dt);
       return;
     }
-    if (a.state !== S_ALIVE) return;
+    if (a.state !== S_ALIVE) { a.yOff = 0; return; }
+    if (a.yOff) a.yOff = approach(a.yOff, 0, dt * 4);
     const sp = Math.hypot(a.vx, a.vz);
     const s = Math.sin(a.heading), c = Math.cos(a.heading);
     st.speed = sp;

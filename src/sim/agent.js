@@ -28,6 +28,7 @@ export class Agent {
     this.stats = genStats(quality);
     this.name = genName(team);
     const S = this.stats;
+    if (this.kind === K_INF) this.radius *= clamp(0.5 + S.size * 0.5, 0.9, 1.12);
     this.mass = T.mass * S.size * S.size;
     this.maxHp = T.hp * (0.7 + S.vit / 165) * (this.kind === K_INF ? 1 : 1);
     this.hp = this.maxHp; this.state = S_ALIVE;
@@ -51,7 +52,7 @@ export class Agent {
     this.slotBlocked = false; this.slotCheckT = rand(); this.path = null; this.pathI = 0; this.pathT = 0;
     this.job = null; this.carry = null;
     this.poseX = 0; this.poseZ = 0; this.poseY = 0; this.poseValid = false;
-    this.lastHitT = -10; this.fallDrop = 0;
+    this.lastHitT = -10; this.fallDrop = 0; this.yOff = 0;
     this.think = 0;
     this.weapon = 0; this.shield = 0; this.st = null; this.joints = null; this.look = null;
     this.q = null; this.crew = null; this.rage = 0; this.mode = 'form'; this.modeT = 0; this.lockT = 0;
