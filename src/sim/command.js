@@ -385,9 +385,13 @@ export class Command {
       for (const r of w.regs) if (r.kind === K_ENG && r.team === 0 && w.auto[0]) w.engineering.assign(r, { type: r.type === 'ram' ? 'ram' : 'onager' });
     }
     if (st.kind === 'river') {
+      // the attackers' engineers throw pontoon bridges across (one site each where the stage lists several)
+      let k = 0;
       for (const r of w.regs) {
-        if (r.type !== 'engineer' || !w.auto[r.team]) continue;
-        if (r.team === 0) w.engineering.assign(r, { type: 'pontoon', x: 70 * st.S });
+        if (r.type !== 'engineer' || !w.auto[r.team] || r.team !== 0) continue;
+        if (st.id === 'ford') continue; // the river can be waded
+        const xs = st.pontoonXs;
+        w.engineering.assign(r, { type: 'pontoon', x: xs ? xs[k++ % xs.length] : 70 * st.S });
       }
     }
   }

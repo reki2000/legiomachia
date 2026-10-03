@@ -157,10 +157,12 @@ function field(b, o = {}) {
 
 // ------------------------------------------------------------------ river crossing
 function river(b, st) {
-  const S = st.S;
-  const X = v => v * S;
+  const S = st.S, id = st.id;
+  // where the crossings are decides how tightly the armies bunch: one bridge draws everybody to it
+  const xm = { river: 1, ford: 0.85, bridge: 0.4, harbor: 0.75 }[id] || 1;
+  const X = v => v * S * xm;
   b.armies[1].posture = 'defend';
-  const wb = -150 * S, fd = 150 * S;
+  const wb = -150 * S * xm, fd = 150 * S * xm;
   // Blue holds the north bank
   b.reg(1, 'pike', 16, 6, 0, 34, '橋頭ファランクス', { wing: '中央', q: 0.65 });
   b.reg(1, 'archer', 20, 4, X(-26), 25, '弓兵隊', { wing: '中央' });
@@ -199,6 +201,15 @@ function river(b, st) {
   b.officer(0, '左翼', fd - 20, -76, '左翼将');
   b.officer(0, '予備', 20, -96, '予備将');
   b.general(0, 0, -110, 6);
+  // more pontoon companies where there is no bridge
+  const extra = id === 'harbor' ? [-60, 60] : id === 'bridge' ? [-60] : [];
+  for (const x of extra) b.reg(0, 'engineer', 10, 2, X(x), -76, '架橋工兵', { wing: '予備' });
+  const RENAME = {
+    ford: { '橋頭ファランクス': '中央ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊', '架橋工兵': '工兵隊' },
+    bridge: { '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊' },
+    harbor: { '橋頭ファランクス': '岸壁ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊' },
+  }[id];
+  if (RENAME) for (const r of b.w.regs) if (RENAME[r.name]) r.name = RENAME[r.name];
 }
 
 // ------------------------------------------------------------------ siege

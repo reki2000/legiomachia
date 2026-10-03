@@ -79,7 +79,9 @@ export class Stage {
       const ch = smoothstep(R.half + 7, R.half - 2, d);
       if (ch > 0) {
         const f = smoothstep(R.fordHalf + 12, R.fordHalf, Math.abs(x - R.fordX));
-        const bed = R.bed + (R.fordBed - R.bed) * f + 0.9 * (d / R.half) * (d / R.half);
+        let bed = R.bed + (R.fordBed - R.bed) * f + 0.9 * (d / R.half) * (d / R.half);
+        // deep pools break up a ford
+        if (this.pools) for (const px of this.pools) bed -= 2.2 * Math.exp(-((x - px) * (x - px) + d * d) / 128);
         h = h * 0.4 + (bed - h * 0.4) * ch;
       } else h *= 0.4 + 0.6 * smoothstep(R.half + 7, R.half + 60, d);
     }
@@ -275,14 +277,44 @@ function buildForest(st) {
   }
 }
 
+// River family. river: a stone bridge, a wooden bridge and a ford. ford: shallows all along, with a
+// few deep pools. bridge: deep water and a single wooden bridge that can be torn down.
+// harbor: a wide channel with no crossing at all; moored boats on the far bank.
 function buildRiver(st) {
-  const S = st.S;
-  st.river = { amp: 4, freq: 0.012, half: 13, fordX: 150 * S, fordHalf: 20, bed: -3.0, fordBed: -1.05 };
-  st.WL = -0.45; st.hasWater = true;
+  const S = st.S, id = st.id;
   const X = Math.min(490, 420 * S);
-  st.initRaster(-X, -40, X, 40);
-  st.stoneBridge = st.addBridge(0, 10, false);
-  st.woodBridge = st.addBridge(-150 * S, 5, true);
+  let half = 13, zr = 40;
+  if (id === 'ford') {
+    st.river = { amp: 5, freq: 0.012, half: 22, fordX: 0, fordHalf: 1e5, bed: -1.05, fordBed: -1.05 };
+    st.pools = [-0.5, -0.18, 0.2, 0.55].map(f => f * X);
+    half = 22;
+  } else if (id === 'bridge') {
+    st.river = { amp: 4, freq: 0.012, half: 15, fordX: 0, fordHalf: -1e5, bed: -3.2, fordBed: -3.2 };
+    half = 15;
+  } else if (id === 'harbor') {
+    st.river = { amp: 2.5, freq: 0.009, half: 36, fordX: 0, fordHalf: -1e5, bed: -3.4, fordBed: -3.4 };
+    half = 36;
+  } else {
+    st.river = { amp: 4, freq: 0.012, half: 13, fordX: 150 * S, fordHalf: 20, bed: -3.0, fordBed: -1.05 };
+  }
+  st.WL = -0.45; st.hasWater = true;
+  zr = half + 30;
+  st.initRaster(-X, -zr, X, zr);
+  if (id === 'river') {
+    st.stoneBridge = st.addBridge(0, 10, false);
+    st.woodBridge = st.addBridge(-150 * S, 5, true);
+  } else if (id === 'bridge') {
+    st.woodBridge = st.addBridge(0, 6, true);
+    st.pontoonXs = [-45 * S, 45 * S];
+  } else if (id === 'harbor') {
+    // three engineer companies build pontoons side by side
+    st.pontoonXs = [-80 * S, 0, 80 * S];
+    // moored boats along the defenders' bank
+    for (const bx of [-130, -95, -50, 12, 52, 96, 140]) {
+      const x = bx * S, z = st.riverZ(x) + half - 3 + (bx % 3);
+      st.decor.push({ type: 'boat', x, z, heading: 1.57 + (bx % 7) * 0.05 });
+    }
+  }
 }
 
 function buildSiege(st) {

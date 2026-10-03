@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { rand, setSeed } from '../util.js';
 import { col } from './segments.js';
 
+const UP = new THREE.Vector3(0, 1, 0);
 const C_WOOD = col(0x6e4e2e), C_WOOD2 = col(0x8a6a40), C_ROPE = col(0x9a8a60), C_DARK = col(0x3a2a1a);
 
 export class StageRenderer {
@@ -77,6 +78,19 @@ export class StageRenderer {
       }
     }
     if (stage.trees && stage.trees.length) this.buildForest(stage.trees, ps1Hook);
+    // moored boats: a tapered hull, a bench and a mast
+    const hull = [];
+    for (const d of stage.decor) {
+      if (d.type !== 'boat') continue;
+      const wl = stage.WL, cs = Math.cos(d.heading), sn = Math.sin(d.heading);
+      const at = (k, w, y0, y1, c) => { // box centred k metres along the boat
+        const px = d.x + sn * k, pz = d.z + cs * k;
+        hull.push([px, (y0 + y1) / 2 + wl, pz, w, y1 - y0, 1.6, c, d.heading]);
+      };
+      for (let k = -3; k <= 3; k += 1.2) at(k, 2.3 - Math.abs(k) * 0.22, -0.5, 0.35, 0x5a3e24);
+      at(0, 0.12, 0.2, 3.6, 0x4a3420);
+    }
+    if (hull.length) this.group.add(this.makeBoxes(hull, ps1Hook));
     if (stage.river) {
       for (const b of stage.bridges) {
         const grp = new THREE.Group();
@@ -148,6 +162,7 @@ export class StageRenderer {
     const c = new THREE.Color();
     list.forEach((b, i) => {
       p.set(b[0], b[1], b[2]); s.set(Math.max(0.01, b[3]), Math.max(0.01, b[4]), Math.max(0.01, b[5]));
+      q.setFromAxisAngle(UP, b[7] || 0);
       m.compose(p, q, s); im.setMatrixAt(i, m);
       c.setHex(b[6]); c.multiplyScalar(0.94 + rand() * 0.12); im.setColorAt(i, c);
     });
