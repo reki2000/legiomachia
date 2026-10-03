@@ -20,6 +20,7 @@ class Builder {
     this.armies = [new Army(0, '軍団'), new Army(1, '東方王国')];
     world.armies = this.armies;
     this.wings = [{}, {}];
+    this.cm = 1; // formations narrower (cm < 1) and deeper where the ground is tight
   }
   wing(team, key, role = 'line') {
     let w = this.wings[team][key];
@@ -28,9 +29,9 @@ class Builder {
   }
   reg(team, type, cols, rows, x, z, name, o = {}) {
     const w = this.w;
-    const scale = o.fixed ? 1 : this.sq;
-    const c = Math.max(1, Math.round(cols * scale));
-    const r = Math.max(1, Math.round(rows * scale));
+    const scale = o.fixed ? 1 : this.sq, cm = o.fixed ? 1 : this.cm;
+    const c = Math.max(1, Math.round(cols * scale * cm));
+    const r = Math.max(1, Math.round(rows * scale / cm));
     const facing = o.facing !== undefined ? o.facing : team === 0 ? 0 : Math.PI;
     const [sx, sz] = SPACING[type];
     const q = o.q !== undefined ? o.q : 0.5;
@@ -93,16 +94,23 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   const m = SIZES[sizeKey] || 1;
   const sq = Math.sqrt(m);
   const b = new Builder(world, sq, world.stage.S);
-  if (stageKind === 'river') river(b, world.stage);
-  else if (stageKind === 'siege') siege(b, world.stage);
-  else field(b, world.stage);
+  const st = world.stage;
+  if (st.kind === 'river') river(b, st);
+  else if (st.kind === 'siege') siege(b, st);
+  else if (st.id === 'canyon') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
+  else if (st.id === 'hills') field(b, { hills: true });
+  else field(b, {});
   return world;
 }
 
 // ------------------------------------------------------------------ plains
-function field(b) {
-  const X = v => v * Math.max(1, b.sq * 0.8);
-  const Z = v => v * Math.max(1, b.sq * 0.35);
+function field(b, o = {}) {
+  const kx = o.kx || 1, kz = o.kz || 1;
+  if (o.cm) b.cm = o.cm;
+  const X = v => v * Math.max(1, b.sq * 0.8) * kx;
+  const Z = v => v * Math.max(1, b.sq * 0.35) * kz;
+  // big beasts stand abreast in threes where the ground is tight
+  const abreast = n => (o.narrow ? [Math.min(n, 3), Math.ceil(n / 3)] : [n, 1]);
   // Red: the Legion
   b.reg(0, 'jav', 14, 3, X(-40), Z(-38), '軽装投槍兵 I', { wing: '中央', q: 0.4 });
   b.reg(0, 'jav', 14, 3, X(40), Z(-38), '軽装投槍兵 II', { wing: '中央', q: 0.4 });
@@ -112,8 +120,8 @@ function field(b) {
   b.reg(0, 'sword', 16, 7, X(54), Z(-55), '第4大隊', { wing: '左翼', q: 0.6 });
   b.reg(0, 'spear', 16, 5, X(-36), Z(-78), '古参兵 右', { wing: '予備', role: 'reserve', q: 0.9 });
   b.reg(0, 'spear', 16, 5, X(36), Z(-78), '古参兵 左', { wing: '予備', role: 'reserve', q: 0.9 });
-  b.reg(0, 'archer', 20, 4, X(-34), Z(-95), 'クレタ弓兵', { wing: '中央', q: 0.6 });
-  b.reg(0, 'sling', 16, 3, X(0), Z(-92), 'バレアレス投石兵', { wing: '中央', q: 0.6 });
+  o.hills ? b.reg(0, 'archer', 20, 4, -100, -14, 'クレタ弓兵', { wing: '中央', q: 0.6, fixed: true }) : b.reg(0, 'archer', 20, 4, X(-34), Z(-95), 'クレタ弓兵', { wing: '中央', q: 0.6 });
+  o.hills ? b.reg(0, 'sling', 16, 3, -72, -10, 'バレアレス投石兵', { wing: '中央', q: 0.6, fixed: true }) : b.reg(0, 'sling', 16, 3, X(0), Z(-92), 'バレアレス投石兵', { wing: '中央', q: 0.6 });
   b.reg(0, 'archer', 20, 4, X(34), Z(-95), '弓兵隊', { wing: '中央', q: 0.5 });
   b.reg(0, 'cav', 8, 3, X(-104), Z(-62), '騎兵 右翼', { wing: '右翼', q: 0.6 });
   b.reg(0, 'dog', 10, 2, X(-84), Z(-70), 'モロシアン犬', { wing: '右翼', q: 0.6 });
@@ -127,14 +135,14 @@ function field(b) {
   b.general(0, X(0), Z(-130), 6);
 
   // Blue: the Eastern kingdom
-  b.reg(1, 'ele', Math.max(3, Math.round(6 * b.sq)), 1, 0, Z(40), '戦象隊', { wing: '中央', fixed: true });
+  b.reg(1, 'ele', ...abreast(Math.max(3, Math.round(6 * b.sq))), 0, Z(40), '戦象隊', { wing: '中央', fixed: true });
   b.reg(1, 'pike', 18, 8, X(-24), Z(58), 'ファランクス I', { wing: '中央', q: 0.6 });
   b.reg(1, 'pike', 18, 8, X(24), Z(58), 'ファランクス II', { wing: '中央', q: 0.6 });
   b.reg(1, 'spear', 16, 7, X(-76), Z(60), '重装槍兵', { wing: '左翼', q: 0.55 });
   b.reg(1, 'axe', 14, 7, X(76), Z(60), '蛮族斧兵', { wing: '右翼', q: 0.45 });
-  b.reg(1, 'archer', 20, 4, X(-30), Z(80), '弓兵隊', { wing: '中央', q: 0.5 });
-  b.reg(1, 'xbow', 20, 3, X(30), Z(80), '弩兵隊', { wing: '中央', q: 0.55 });
-  b.reg(1, 'chr', Math.max(3, Math.round(5 * b.sq)), 2, X(-126), Z(62), '鎌戦車隊', { wing: '左翼', fixed: true });
+  o.hills ? b.reg(1, 'archer', 20, 4, 96, 34, '弓兵隊', { wing: '中央', q: 0.5, fixed: true }) : b.reg(1, 'archer', 20, 4, X(-30), Z(80), '弓兵隊', { wing: '中央', q: 0.5 });
+  o.hills ? b.reg(1, 'xbow', 20, 3, 68, 30, '弩兵隊', { wing: '中央', q: 0.55, fixed: true }) : b.reg(1, 'xbow', 20, 3, X(30), Z(80), '弩兵隊', { wing: '中央', q: 0.55 });
+  b.reg(1, 'chr', ...(o.narrow ? [3, Math.ceil(Math.max(3, Math.round(5 * b.sq)) * 2 / 3)] : [Math.max(3, Math.round(5 * b.sq)), 2]), X(-126), Z(62), '鎌戦車隊', { wing: '左翼', fixed: true });
   b.reg(1, 'hcav', 8, 3, X(-146), Z(82), '弓騎兵', { wing: '左翼', q: 0.6 });
   b.reg(1, 'camel', 8, 3, X(124), Z(62), '駱駝騎兵', { wing: '右翼', q: 0.5 });
   b.reg(1, 'cata', 8, 3, X(108), Z(80), '重装騎兵', { wing: '右翼', q: 0.8 });

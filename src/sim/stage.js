@@ -5,11 +5,27 @@ import { smoothstep, clamp, rand, setSeed, randRange } from '../util.js';
 
 export const F_LADDER = 1, F_GATE = 2, F_BRIDGE = 4, F_WALL = 8, F_RAMP = 16, F_PONTOON = 32, F_HOUSE = 64, F_TOWER = 128;
 
-export const STAGE_NAMES = { field: '平原の会戦', river: '渡河戦', siege: '攻城戦' };
+export const STAGE_NAMES = {
+  field: '平原の会戦', hills: '丘陵の会戦', forest: '森の会戦', canyon: '峡谷の隘路',
+  river: '渡河戦', ford: '浅瀬の渡河戦', bridge: '落橋の渡河戦', harbor: '港の上陸戦',
+  siege: '攻城戦', camp: '野営地襲撃',
+};
+// the three families share behaviour (AI, engineering tasks, navigation); the id picks the variant
+export const STAGE_FAMILY = {
+  field: 'field', hills: 'field', forest: 'field', canyon: 'field',
+  river: 'river', ford: 'river', bridge: 'river', harbor: 'river',
+  siege: 'siege', camp: 'siege',
+};
 
 export class Stage {
-  constructor(kind, scale = 1) {
-    this.kind = kind;
+  constructor(id, scale = 1) {
+    this.id = id;
+    this.kind = STAGE_FAMILY[id] || id;
+    this.needsNav = false;   // open ground needs no navigation grid; obstacles and cliffs do
+    this.hilly = false;      // height decides: uphill is slower, the high ground hits harder
+    this.trees = null;       // [{x, z, s}] solid trees (forest)
+    this.decor = [];         // purely visual props (moored boats)
+    this.pontoonXs = null;
     this.scale = scale;
     this.S = Math.max(1, Math.sqrt(scale) * 0.8); // geometric widening for big armies
     this.flatR = 160 * this.S;
@@ -27,10 +43,15 @@ export class Stage {
   base(x, z) {
     const r = Math.sqrt(x * x + z * z);
     const hills = smoothstep(this.flatR, this.flatR + 180, r);
-    const small = 0.7 * Math.sin(x * 0.019 + 0.5) * Math.cos(z * 0.016) + 0.35 * Math.sin(x * 0.047 + z * 0.041);
+    let small = 0.7 * Math.sin(x * 0.019 + 0.5) * Math.cos(z * 0.016) + 0.35 * Math.sin(x * 0.047 + z * 0.041);
+    if (this.id === 'hills') {
+      // broad round hills on both flanks and a gentle swell in the middle
+      for (const [hx, hz, hh, hs] of HILLS) small += hh * Math.exp(-((x - hx) * (x - hx) + (z - hz) * (z - hz)) / (2 * hs * hs));
+    }
     const big = 9 * Math.sin(x * 0.009 + 1.3) * Math.cos(z * 0.011 - 0.4) + 6 * Math.sin(x * 0.021 - z * 0.017) + 7;
     return small + hills * big;
   }
+  canyonHalf(z) { return 15 + 62 * smoothstep(12, 125, Math.abs(z)) * this.S; }
   riverZ(x) { return this.river.amp * Math.sin(x * this.river.freq); }
   // terrain is sampled into a 1 m grid once; lookups are bilinear
   bakeTerrain() {
@@ -61,6 +82,11 @@ export class Stage {
         const bed = R.bed + (R.fordBed - R.bed) * f + 0.9 * (d / R.half) * (d / R.half);
         h = h * 0.4 + (bed - h * 0.4) * ch;
       } else h *= 0.4 + 0.6 * smoothstep(R.half + 7, R.half + 60, d);
+    }
+    if (this.id === 'canyon') {
+      // sheer rock walls close in to a narrow neck in the middle
+      const d = Math.abs(x) - this.canyonHalf(z);
+      h += smoothstep(0, 9, d) * (24 + 5 * Math.sin(z * 0.05 + x * 0.03));
     }
     const C = this.city;
     if (C) {
@@ -206,14 +232,47 @@ export class Stage {
   }
 }
 
+const HILLS = [[-100, -12, 21, 46], [96, 30, 18, 44], [0, 0, 5, 85]];
+
 // ------------------------------------------------------------------ builders
-export function buildStage(kind, scale) {
+export function buildStage(id, scale) {
   setSeed(4242);
-  const st = new Stage(kind, scale);
-  if (kind === 'river') buildRiver(st);
-  else if (kind === 'siege') buildSiege(st);
+  const st = new Stage(id, scale);
+  if (st.kind === 'river') buildRiver(st);
+  else if (st.kind === 'siege') buildSiege(st);
+  if (id === 'hills') st.hilly = true;
+  if (id === 'canyon') st.needsNav = true;
   st.bakeTerrain();
+  if (id === 'forest') buildForest(st);
   return st;
+}
+
+// Woods across the middle of the field. Every tree is a 2 m block of the raster (the size of a
+// navigation cell), so men walk around trees and arrows stop in them. Open lanes and glades
+// are left, so the armies must funnel through them.
+function buildForest(st) {
+  st.needsNav = true;
+  const S = st.S, half = Math.min(470, Math.round(215 * S)), band = 36;
+  st.initRaster(-half, -band - 8, half, band + 8);
+  const lanes = [-0.62 * half, 0.04 * half, 0.55 * half];
+  const glades = [[-0.3 * half, 6, 22], [0.3 * half, -8, 20]];
+  st.trees = [];
+  for (let cx = -half; cx < half; cx += 2) {
+    for (let cz = -band - 6; cz < band + 6; cz += 2) {
+      const x = cx + 1, z = cz + 1;
+      const edge = smoothstep(band, band - 12, Math.abs(z));
+      if (edge <= 0) continue;
+      let lane = 1e9;
+      for (const l of lanes) lane = Math.min(lane, Math.abs(x - l - 4 * Math.sin(z * 0.08)));
+      let open = smoothstep(6, 11, lane);
+      for (const [gx, gz, gr] of glades) open = Math.min(open, smoothstep(gr * 0.8, gr * 1.15, Math.hypot(x - gx, (z - gz) * 1.3)));
+      const clump = 0.5 + 0.5 * Math.sin(x * 0.07 + 1) * Math.cos(z * 0.11);
+      if (rand() < 0.66 * edge * open * (0.35 + 0.65 * clump)) {
+        st.trees.push({ x: x + randRange(-0.3, 0.3), z: z + randRange(-0.3, 0.3), s: randRange(0.9, 1.7) });
+        st.setRect(cx, cz, cx + 2, cz + 2, st.terrain(x, z) + 3.2, F_HOUSE);
+      }
+    }
+  }
 }
 
 function buildRiver(st) {

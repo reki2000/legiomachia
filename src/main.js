@@ -122,7 +122,7 @@ world.on((type, data) => onWorldEvent(type, data));
 const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
 
 const rig = new CameraRig(camera, renderer.domElement);
-if (stageKind === 'siege') { rig.target.set(0, 0, 0); rig.dist = 110; rig.pitch = 0.42; }
+if (stage.kind === 'siege') { rig.target.set(0, 0, 0); rig.dist = 110; rig.pitch = 0.42; }
 const selection = new Set();
 let paused = false, timeScale = 1, slowmo = false, deployT = 0;
 const autoStart = params.get('autostart');

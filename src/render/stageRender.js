@@ -76,6 +76,7 @@ export class StageRenderer {
         this.gateMeshes.push({ g, meshes: [body, m, bands, bands2, ...merl], broken: false });
       }
     }
+    if (stage.trees && stage.trees.length) this.buildForest(stage.trees, ps1Hook);
     if (stage.river) {
       for (const b of stage.bridges) {
         const grp = new THREE.Group();
@@ -116,6 +117,27 @@ export class StageRenderer {
       roofs.forEach((r, i) => { p.set(r[0], r[1], r[2]); s.set(r[3] * 1.4, r[4], r[5] * 1.4); m.compose(p, q, s); im.setMatrixAt(i, m); });
       this.group.add(im);
     }
+  }
+  buildForest(trees, ps1Hook) {
+    const trunkGeo = new THREE.CylinderGeometry(0.28, 0.4, 3, 5).translate(0, 1.5, 0);
+    const crownGeo = new THREE.ConeGeometry(1.7, 7, 6).translate(0, 5.5, 0);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a4028, flatShading: true });
+    const crownMat = new THREE.MeshLambertMaterial({ color: 0x4a6e34, flatShading: true });
+    ps1Hook(trunkMat); ps1Hook(crownMat);
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
+    const crowns = new THREE.InstancedMesh(crownGeo, crownMat, trees.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+    const up = new THREE.Vector3(0, 1, 0);
+    trees.forEach((t, i) => {
+      p.set(t.x, this.stage.terrain(t.x, t.z) - 0.2, t.z);
+      q.setFromAxisAngle(up, rand() * 6.28);
+      sc.set(t.s, t.s * (0.85 + rand() * 0.4), t.s);
+      m.compose(p, q, sc);
+      trunks.setMatrixAt(i, m); crowns.setMatrixAt(i, m);
+      c.setHSL(0.25 + rand() * 0.07, 0.35 + rand() * 0.2, 0.26 + rand() * 0.14);
+      crowns.setColorAt(i, c);
+    });
+    this.group.add(trunks, crowns);
   }
   makeBoxes(list, ps1Hook) {
     const g = new THREE.BoxGeometry(1, 1, 1);

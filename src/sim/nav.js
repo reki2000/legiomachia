@@ -1,6 +1,6 @@
 // Navigation grid (2 m cells) built from the stage height field.
 // Two movement classes: 0 = on foot (ramps, ladders), 1 = mounted/vehicles.
-import { F_LADDER } from './stage.js';
+import { F_LADDER, F_HOUSE } from './stage.js';
 
 const DEEP = 1, SHALLOW = 2, LADDER = 4;
 const SQ2 = Math.SQRT2;
@@ -15,8 +15,9 @@ export class Nav {
     this.F = new Uint8Array(n);
     this.clear = new Float32Array(n);
     this.comp = [new Int32Array(n), new Int32Array(n)]; // connected components per movement class
+    this.csize = [new Int32Array(n + 1), new Int32Array(n + 1)]; // cells per component
     this.bfs = new Int32Array(n);
-    this.trivial = stage.kind === 'field';
+    this.trivial = stage.kind === 'field' && !stage.needsNav;
     this.version = 0;
     // A* scratch
     this.g = new Float32Array(n);
@@ -51,6 +52,8 @@ export class Nav {
       const d = st.WL - h;
       if (d > 1.1) f |= DEEP; else if (d > 0.15) f |= SHALLOW;
     }
+    // solid blocks (trees, houses) are impassable and never a destination: handle them like deep water
+    if (st.flagAt(x, z) & F_HOUSE) f |= DEEP;
     // ladders are narrower than a cell: probe across it
     if (st.flagAt(x, z) & F_LADDER || st.flagAt(x - 0.6, z) & F_LADDER || st.flagAt(x + 0.6, z) & F_LADDER) f |= LADDER;
     this.F[c] = f;
@@ -79,6 +82,7 @@ export class Nav {
         if (c >= N) { const m = c - N; if (!comp[m] && this.stepOK(c, m, cls)) { comp[m] = id; q[t++] = m; } }
         if (c < n - N) { const m = c + N; if (!comp[m] && this.stepOK(c, m, cls)) { comp[m] = id; q[t++] = m; } }
       }
+      this.csize[cls][id] = t;
     }
   }
   // component of a cell; swimmers belong to the nearest dry cell's region
@@ -187,14 +191,18 @@ export class Nav {
     }
     return true;
   }
+  // a cell worth standing on: dry, and part of a real region (not a pocket between cliffs or trees)
+  open(c, cls) {
+    return !(this.F[c] & DEEP) && this.csize[cls][this.comp[cls][c]] >= 40;
+  }
   nearestOpen(c, cls) {
-    if (!(this.F[c] & DEEP)) return c;
+    if (this.open(c, cls)) return c;
     const N = this.N;
     for (let r = 1; r < 12; r++) {
       for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
         const n = c + dz * N + dx;
-        if (n >= 0 && n < N * N && !(this.F[n] & DEEP)) return n;
+        if (n >= 0 && n < N * N && this.open(n, cls)) return n;
       }
     }
     return c;
@@ -203,7 +211,7 @@ export class Nav {
   findPath(x0, z0, x1, z1, cls, maxExpand = 90000) {
     if (this.trivial || this.raycast(x0, z0, x1, z1, cls)) return [{ x: x1, z: z1 }];
     const N = this.N, H = this.H, F = this.F;
-    const s = this.cellOf(x0, z0);
+    const s = this.nearestOpen(this.cellOf(x0, z0), cls);
     const goal = this.nearestOpen(this.cellOf(x1, z1), cls);
     if (this.compOf(s, cls) !== this.comp[cls][goal] || !this.comp[cls][goal]) return null;
     const gx = goal % N, gz = Math.floor(goal / N);

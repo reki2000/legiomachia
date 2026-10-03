@@ -37,7 +37,7 @@ export function buildTerrain(scene, ps1Hook, stage) {
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const grass = new THREE.Color(0x6f8a3c), dry = new THREE.Color(0x9c9a55), dirt = new THREE.Color(0x8a7048);
-  const mud = new THREE.Color(0x5a4a34), sand = new THREE.Color(0xb0a070), paved = new THREE.Color(0x8c8272);
+  const rock = new THREE.Color(0x8a7f70), mud = new THREE.Color(0x5a4a34), sand = new THREE.Color(0xb0a070), paved = new THREE.Color(0x8c8272);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
@@ -53,6 +53,7 @@ export function buildTerrain(scene, ps1Hook, stage) {
       if (d > 0.3) c.lerp(mud, smoothstep(0.3, 1.5, d));
     }
     if (stage.city && stage.insideCity(x, z)) c.lerp(paved, 0.6);
+    if (stage.id === 'canyon') c.lerp(rock, smoothstep(1.5, 9, h) * 0.85);
     c.multiplyScalar(0.92 + rand() * 0.12);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }

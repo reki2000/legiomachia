@@ -312,6 +312,11 @@ export class World {
     if (a.swimming) v = 0.9;
     else if (a.climbing) v = Math.min(v, 1.1);
     else if (this.stage.hasWater && this.stage.WL - a.y > 0.3) v *= 0.55;
+    if (this.stage.hilly && !a.swimming) {
+      // uphill is slow going, downhill a little quicker
+      const sp = Math.hypot(a.vx, a.vz);
+      if (sp > 0.5) v *= clamp(1 - 0.9 * (this.stage.terrain(a.x + a.vx / sp * 1.5, a.z + a.vz / sp * 1.5) - a.y) / 1.5, 0.7, 1.12);
+    }
     return v * this.env.speed;
   }
   moveFree(a, dt) {
@@ -698,6 +703,8 @@ export class World {
   // ------------------------------------------------------------- damage
   resolveMelee(att, ax, az, t, weapon, dmgMul, mounted) {
     const W = WEAPONS[weapon];
+    // the man on the high ground hits harder
+    if (this.stage.hilly && att) dmgMul *= 1 + clamp((att.y - t.y) * 0.04, -0.12, 0.16);
     let dx = t.x - ax, dz = t.z - az;
     const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
     const fx = this.fx;
