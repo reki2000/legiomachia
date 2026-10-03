@@ -14,6 +14,7 @@ import { buildScenario, SIZES } from './scenario.js';
 import { CameraRig } from './camera.js';
 import { K_INF, K_ENG, TYPES, WEAPONS } from './sim/defs.js';
 import { Sound } from './sound.js';
+import { Weather, WEATHER } from './weather.js';
 
 const $ = id => document.getElementById(id);
 
@@ -39,13 +40,15 @@ const FOG = new THREE.Fog(0xc9c2ac, 180, 950);
 scene.fog = FOG;
 scene.background = new THREE.Color(0xc9c2ac);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.3, 2500);
-scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x6a5a3a, 1.35));
+const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x6a5a3a, 1.35);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 2.0);
 sun.position.set(-120, 160, 80);
 scene.add(sun);
+let skyMat, weather;
 {
   const g = new THREE.SphereGeometry(2000, 24, 12);
-  const mat = new THREE.ShaderMaterial({
+  const mat = skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: { top: { value: new THREE.Color(0x5f86c0) }, bottom: { value: new THREE.Color(0xc9c2ac) } },
     vertexShader: 'varying float h; void main(){ h = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
@@ -103,6 +106,17 @@ world.command = new Command(world);
 buildScenario(world, stageKind, sizeKey, Number(params.get('seed')) || 7);
 world.command.setup();
 world.auto[0] = $('cAuto').checked;
+{
+  const wk = WEATHER[params.get('weather')] ? params.get('weather') : 'clear';
+  weather = new Weather({ scene, fog: FOG, hemi, sun, skyMat, camera, fx, world, sound });
+  weather.set(wk);
+  weather.update(100); // jump straight to the chosen weather
+  $('sWeather').value = wk;
+  $('sWeather').onchange = e => {
+    weather.set(e.target.value);
+    const u = new URL(location.href); u.searchParams.set('weather', e.target.value); history.replaceState(null, '', u);
+  };
+}
 world.on((type, data) => onWorldEvent(type, data));
 // big battles step the simulation at 30 Hz
 const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
@@ -167,7 +181,7 @@ $('cPs1').onchange = e => setPs1(e.target.checked);
 }
 const reload = () => {
   const u = new URL(location.href);
-  u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value);
+  u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value); u.searchParams.set('weather', $('sWeather').value);
   location.href = u.toString();
 };
 $('sSize').onchange = reload;
@@ -523,6 +537,7 @@ function frame(now) {
   const t2 = performance.now();
   simMs = simMs * 0.9 + (t1 - t0) * 0.1; renMs = renMs * 0.9 + (t2 - t1) * 0.1;
   sound.update(rdt, world, camera, paused ? 0 : ts);
+  weather.update(rdt);
 
   if (bannerT > 0) { bannerT -= rdt; if (bannerT <= 0) bannerEl.style.opacity = 0; }
   fpsN++; fpsT += rdt;

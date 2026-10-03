@@ -18,7 +18,7 @@ npm run dev        # http://localhost:5173/
 npm run build      # static build in dist/
 ```
 
-URL parameters: `?stage=field|river|siege`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
+URL parameters: `?stage=field|river|siege`, `?weather=clear|fog|rain|dusk|night`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
 
 ## Stages
 

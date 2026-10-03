@@ -38,6 +38,7 @@ export class World {
     this.freezeQueue = [];
     this.kills = [0, 0];
     this.pending = [];
+    this.env = { speed: 1, acc: 1, vis: 1 }; // weather: movement, missile accuracy, sight (see weather.js)
     this.armies = [null, null];
     this.command = null;      // hierarchical AI (command.js)
     this.engineering = null;  // siege works (engineering.js)
@@ -262,6 +263,7 @@ export class World {
     return best;
   }
   nearestEnemyAnywhere(a, R, sameLevel = false) {
+    R *= this.env.vis;
     let best = null, bd = R;
     for (const r of this.regs) {
       if (r.team === a.team || r.alive === 0) continue;
@@ -310,7 +312,7 @@ export class World {
     if (a.swimming) v = 0.9;
     else if (a.climbing) v = Math.min(v, 1.1);
     else if (this.stage.hasWater && this.stage.WL - a.y > 0.3) v *= 0.55;
-    return v;
+    return v * this.env.speed;
   }
   moveFree(a, dt) {
     a.prevX = a.x; a.prevZ = a.z;
@@ -924,8 +926,8 @@ export class World {
     }
     v = Math.min(v, 85) * randRange(0.97, 1.03);
     const spread = type === P_ROCK ? 0.03 : high ? 0.035 : type === P_JAV ? 0.03 : 0.015;
-    const yaw = Math.atan2(tx - ox, tz - oz) + randRange(-1, 1) * spread;
-    theta += randRange(-1, 1) * 0.02;
+    const yaw = Math.atan2(tx - ox, tz - oz) + randRange(-1, 1) * spread / this.env.acc;
+    theta += randRange(-1, 1) * 0.02 / this.env.acc;
     const h = v * Math.cos(theta);
     this.proj.spawn(ox, oy, oz, Math.sin(yaw) * h, v * Math.sin(theta), Math.cos(yaw) * h, team, type, dmgMul);
     this.emit(type === P_ROCK ? 'onager' : type === P_STONE ? 'sling' : type === P_JAV ? 'javelin' : 'arrow');

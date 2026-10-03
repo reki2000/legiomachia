@@ -8,6 +8,11 @@ export class Sound {
     this.budget = {};
     this.rumbleLevel = 0;
     this.musicOn = false;
+    this.rainLevel = 0;
+  }
+  setRain(v) {
+    this.rainLevel = v;
+    if (this.rain) this.rain.gain.setTargetAtTime(v * 0.16, this.ctx.currentTime, 0.8);
   }
   setMusic(on) {
     this.musicOn = on;
@@ -38,6 +43,11 @@ export class Sound {
     const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 90;
     this.hoof = ctx.createGain(); this.hoof.gain.value = 0;
     src2.connect(lp2).connect(this.hoof).connect(this.master); src2.start();
+    // rain: a steady hiss
+    const src3 = ctx.createBufferSource(); src3.buffer = buf; src3.loop = true; src3.playbackRate.value = 1.3;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+    this.rain = ctx.createGain(); this.rain.gain.value = this.rainLevel * 0.16;
+    src3.connect(hp).connect(this.rain).connect(this.master); src3.start();
   }
   gainAt(data, camera) {
     if (!data || data.x === undefined && data.cx === undefined) return 0.6;

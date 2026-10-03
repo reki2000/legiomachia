@@ -24,7 +24,7 @@ export class FX {
     g.setAttribute('size', this.gSize);
     this.uScale = { value: 800 };
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uScale: this.uScale, fogColor: { value: new THREE.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 } },
+      uniforms: { uScale: this.uScale, uTint: { value: new THREE.Color(1, 1, 1) }, fogColor: { value: new THREE.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 } },
       vertexShader: `
         attribute float size; attribute vec4 color; varying vec4 vC; varying float vFog;
         uniform float uScale;
@@ -39,11 +39,11 @@ export class FX {
         }`,
       fragmentShader: `
         varying vec4 vC; varying float vFog;
-        uniform vec3 fogColor; uniform float fogNear; uniform float fogFar;
+        uniform vec3 uTint; uniform vec3 fogColor; uniform float fogNear; uniform float fogFar;
         void main(){
           if (vC.a <= 0.01) discard;
           float f = smoothstep(fogNear, fogFar, vFog);
-          gl_FragColor = vec4(mix(vC.rgb, fogColor, f), vC.a);
+          gl_FragColor = vec4(mix(vC.rgb * uTint, fogColor, f), vC.a);
         }`,
       transparent: true, depthWrite: false,
     });
