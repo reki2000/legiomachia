@@ -1,10 +1,17 @@
 // Procedural WebAudio sound: no assets. Metal clashes, horns, war cries,
 // hoof rumble and arrow volleys, attenuated by distance to the camera.
+import { Music } from './music.js';
+
 export class Sound {
   constructor() {
     this.ctx = null;
     this.budget = {};
     this.rumbleLevel = 0;
+    this.musicOn = false;
+  }
+  setMusic(on) {
+    this.musicOn = on;
+    if (this.music) this.music.setEnabled(on);
   }
   unlock() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
@@ -20,6 +27,8 @@ export class Sound {
     const d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noise = buf;
+    this.music = new Music(ctx, buf, this.master);
+    if (this.musicOn) this.music.setEnabled(true);
     // continuous battle bed: filtered noise (crowd + hooves)
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
@@ -127,6 +136,7 @@ export class Sound {
   }
   update(dt, world, camera, ts) {
     if (!this.ctx) return;
+    this.music.setIntensity(world.phase === 'battle' ? 1 : 0.3);
     // ambient bed follows how much fighting / galloping is near the camera
     let fight = 0, gallop = 0;
     const cx = camera.position.x, cz = camera.position.z;

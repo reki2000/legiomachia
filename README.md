@@ -72,6 +72,7 @@ In the army tree on the left, clicking a commander selects every regiment under 
 | Enter / Space / Z | Start battle / pause / slow motion |
 | 1 / 2 / 3, T | Camera: free / follow / cinematic; follow the soldier under the cursor |
 | P | PS1-style rendering (low resolution + vertex snapping) |
+| M | Toggle the background music |
 
 The UI text is in Japanese.
 
@@ -97,10 +98,11 @@ The UI text is in Japanese.
 ```
 src/
   main.js             boot, UI (army tree, soldier card, orders), main loop
-  camera.js           RTS camera, follow camera, cinematic director
+  camera.js           RTS camera, follow camera, cinematic director (including pulled-back wide shots)
   terrain.js          height API (backed by the stage), terrain / water / scenery meshes
   scenario.js         army deployments and chain of command per stage
   sound.js            procedural WebAudio sound effects (no assets)
+  music.js            procedural background music (bass, war drums, a short melody)
   anim/human.js       procedural human animation
   anim/quadruped.js   horse / camel / dog rig and the elephant
   sim/stage.js        stages: terrain, structure raster, bridges, ladders, gate, stakes

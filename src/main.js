@@ -154,6 +154,17 @@ $('sSpeed').onchange = e => { timeScale = Number(e.target.value); slowmo = false
 $('sCam').onchange = e => rig.setMode(e.target.value, world);
 $('cAuto').onchange = e => { world.auto[0] = e.target.checked; };
 $('cPs1').onchange = e => setPs1(e.target.checked);
+// background music: on by default, starts with the first click / key press (browsers block audio before that)
+{
+  let saved = null;
+  try { saved = localStorage.getItem('legiomachia.bgm'); } catch (e) { /* storage may be blocked */ }
+  if (saved !== null) $('cBgm').checked = saved === '1';
+  sound.setMusic($('cBgm').checked);
+  $('cBgm').onchange = e => {
+    sound.setMusic(e.target.checked); sound.unlock();
+    try { localStorage.setItem('legiomachia.bgm', e.target.checked ? '1' : '0'); } catch (err) { /* ignore */ }
+  };
+}
 const reload = () => {
   const u = new URL(location.href);
   u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value);
@@ -188,6 +199,7 @@ window.addEventListener('keydown', e => {
   sound.unlock();
   switch (e.code) {
     case 'Enter': startBattle(); break;
+    case 'KeyM': $('cBgm').click(); break;
     case 'Space': togglePause(); e.preventDefault(); break;
     case 'Digit1': rig.setMode('free', world); $('sCam').value = 'free'; break;
     case 'Digit2': rig.setMode('follow', world); $('sCam').value = 'follow'; break;
@@ -532,7 +544,7 @@ requestAnimationFrame(frame);
 
 // debug handle for headless tests
 window.__battle = {
-  world, rig, camera, renderer, startBattle, setPs1, stage,
+  world, rig, camera, renderer, startBattle, setPs1, stage, sound,
   advance(sec) { const n = Math.round(sec / simStep); const t = performance.now(); for (let i = 0; i < n; i++) world.update(simStep); return (performance.now() - t) / n; },
   view(x, z, dist, pitch, yaw) { rig.setMode('free'); rig.target.set(x, 0, z); rig.dist = dist; rig.pitch = pitch; if (yaw !== undefined) rig.yaw = yaw; rig.first = true; },
 };

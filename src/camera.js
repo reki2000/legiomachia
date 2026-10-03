@@ -139,10 +139,35 @@ export class CameraRig {
       const types = a.kind === K_INF ? ['chase', 'side', 'front', 'crane', 'high', 'side'] : ['chase', 'side', 'front', 'crane', 'low', 'high'];
       this.shot = { a, type: types[Math.floor(rand() * types.length)], side: rand() < 0.5 ? 1 : -1, t: 0, ang: rand() * 6.28 };
       this.shotT = randRange(5, 8);
+      // now and then pull right back to show the whole engagement
+      if (rand() < 0.2) {
+        const r = a.reg;
+        let er = null, ed = 1e9;
+        if (r) for (const o of world.regs) {
+          if (o.team === r.team || o.alive === 0) continue;
+          const d = Math.hypot(o.cx - r.cx, o.cz - r.cz);
+          if (d < ed) { ed = d; er = o; }
+        }
+        if (r && er) {
+          const sh = this.shot;
+          sh.type = rand() < 0.45 ? 'wide' : 'vista';
+          sh.r = r; sh.er = er;
+          sh.fx = (r.cx + er.cx) / 2; sh.fz = (r.cz + er.cz) / 2;     // middle of the clash
+          sh.rx = r.cx; sh.rz = r.cz; sh.ex = er.cx; sh.ez = er.cz;
+          sh.span = Math.max(40, Math.min(160, ed));                    // how far apart the two sides are
+          this.shotT = randRange(9, 13);
+        }
+      }
       this.cut = true;
     }
     const s = this.shot, a = s.a;
     s.t += dt;
+    if (s.r && s.er && s.r.alive && s.er.alive) {
+      // the two lines keep moving: let the framing follow them
+      const k = 1 - Math.exp(-dt * 0.8);
+      s.rx += (s.r.cx - s.rx) * k; s.rz += (s.r.cz - s.rz) * k; s.ex += (s.er.cx - s.ex) * k; s.ez += (s.er.cz - s.ez) * k;
+      s.fx = (s.rx + s.ex) / 2; s.fz = (s.rz + s.ez) / 2;
+    }
     const ax = a.rag ? a.rag.x[0] : a.x, az = a.rag ? a.rag.x[2] : a.z;
     const gy = groundHeight(ax, az);
     const fx = Math.sin(a.heading), fz = Math.cos(a.heading);
@@ -183,6 +208,24 @@ export class CameraRig {
         this.pos.set(ax - fx * 22 + rx * 8 * s.side, gy + 16, az - fz * 22 + rz * 8 * s.side);
         this.look.set(ax + fx * 10, gy, az + fz * 10);
         break;
+      case 'wide': {
+        // high, slowly orbiting and backing off: the whole clash in frame
+        const R = 50 + s.span * 0.5 + s.t * 2, ang = s.ang + s.t * 0.07;
+        this.pos.set(s.fx + Math.cos(ang) * R, gy + 28 + s.span * 0.2 + s.t, s.fz + Math.sin(ang) * R);
+        this.look.set(s.fx, 2, s.fz);
+        break;
+      }
+      case 'vista': {
+        // from behind one army, over the heads, looking across at the other; drifts sideways
+        let dx = s.ex - s.rx, dz = s.ez - s.rz;
+        const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+        const sx = -dz * s.side, sz = dx * s.side;
+        const back = 55 + s.span * 0.3, drift = -12 + s.t * 2.2;
+        const px = s.rx - dx * back + sx * (20 + drift), pz = s.rz - dz * back + sz * (20 + drift);
+        this.pos.set(px, groundHeight(px, pz) + 20 + s.span * 0.12, pz);
+        this.look.set(s.fx + dx * 10, 2, s.fz + dz * 10);
+        break;
+      }
       case 'crane': {
         const ang = s.ang + s.t * 0.12;
         this.pos.set(ax + Math.cos(ang) * 30, gy + 14 + s.t * 1.2, az + Math.sin(ang) * 30);
@@ -191,7 +234,7 @@ export class CameraRig {
       }
     }
     if (this.cut) { this.smoothPos.copy(this.pos); this.smoothLook.copy(this.look); this.cut = false; }
-    this.apply(dt, s.type === 'front' ? 30 : 5);
+    this.apply(dt, s.type === 'front' ? 30 : s.type === 'wide' || s.type === 'vista' ? 3 : 5);
   }
   apply(dt, stiffness) {
     const k = this.first ? 1 : 1 - Math.exp(-stiffness * dt);
