@@ -16,7 +16,7 @@ export const NJ = 18;
 export const W_SWORD = 0, W_SPEAR = 1, W_BOW = 2, W_AXE = 3, W_MACE = 4, W_PIKE = 5,
   W_JAV = 6, W_SLING = 7, W_XBOW = 8, W_HAMMER = 9, W_BANNER = 10, W_NONE = 11;
 export const SH_NONE = 0, SH_ROUND = 1, SH_RECT = 2, SH_SMALL = 3;
-export const SEAT_GROUND = 0, SEAT_RIDE = 1, SEAT_STAND = 2;
+export const SEAT_GROUND = 0, SEAT_RIDE = 1, SEAT_STAND = 2, SEAT_ROW = 3; // ROW: an oarsman on his bench (st.rowPh drives the stroke)
 
 export const ACT_NONE = 0, ACT_ATTACK = 1, ACT_BLOCK = 2, ACT_SHOOT = 3, ACT_CHEER = 4,
   ACT_THROW = 5, ACT_SLING = 6, ACT_RELOAD = 7, ACT_WORK = 8;
@@ -162,7 +162,7 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
   // ---- pelvis & legs ----
   let px = 0, py = 0, pz = 0;
   const hipYaw = -0.15 * c1 * move;
-  if (seat !== SEAT_RIDE) {
+  if (seat !== SEAT_RIDE && seat !== SEAT_ROW) {
     const bob = Math.cos(2 * TAU * (ph - duty * 0.5)) * (0.02 * (1 - run) - 0.045 * run) * move;
     py = 0.93 * s - 0.06 * run * move - 0.09 * cb - 0.07 * fl - crouch + bob + breathe * 0.5;
     px = 0.02 * Math.sin(TAU * ph) * move * (1 - run);
@@ -175,7 +175,13 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
   setL(J.LHIP, px - hc * hw2, py - 0.05, pz + hs * hw2);
 
   const thigh = 0.44 * s, shin = 0.43 * s;
-  if (seat === SEAT_RIDE) {
+  if (seat === SEAT_ROW) {
+    // feet braced against the stretcher in front, knees up
+    setL(J.RFOOT, 0.16 * s, -0.42 * s, 0.66 * s);
+    setL(J.LFOOT, -0.16 * s, -0.42 * s, 0.66 * s);
+    ik2(L, J.RKNEE * 3, J.RFOOT * 3, L[36], L[37], L[38], L[42], L[43], L[44], thigh, shin, 0.1, 1, 0.3);
+    ik2(L, J.LKNEE * 3, J.LFOOT * 3, L[27], L[28], L[29], L[33], L[34], L[35], thigh, shin, -0.1, 1, 0.3);
+  } else if (seat === SEAT_RIDE) {
     setL(J.RFOOT, 0.27 * s, -0.6 * s, 0.1);
     setL(J.LFOOT, -0.27 * s, -0.6 * s, 0.1);
     ik2(L, J.RKNEE * 3, J.RFOOT * 3, L[36], L[37], L[38], L[42], L[43], L[44], thigh, shin, 0.6, 0, 1);
@@ -200,6 +206,8 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
   // ---- torso ----
   let lean = 0.3 * run * move + 0.12 * cb + st.lean - 0.45 * fl + aLean + 0.4 * push + 0.12 * climb - 0.1 * carry;
   if (seat === SEAT_RIDE) lean += 0.08 + 0.15 * run;
+  const stroke = seat === SEAT_ROW ? Math.sin(st.rowPh || 0) : 0; // +1 reaching forward, -1 pulled back
+  if (seat === SEAT_ROW) lean += 0.15 + 0.38 * stroke;
   const cdy = Math.cos(lean), cdz = Math.sin(lean);
   const tl = 0.5 * s;
   const nx = px, ny = py + cdy * tl + breathe, nz = pz + cdz * tl;
@@ -383,6 +391,11 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
     const t = st.idleT * 5;
     mixRel(rh, J.RSHO, 0.25, 0.15 + 0.2 * Math.sin(t), 0.25, swim);
     mixRel(lh, J.LSHO, -0.25, 0.15 + 0.2 * Math.cos(t), 0.25, swim);
+  }
+  if (seat === SEAT_ROW) {
+    // both hands on the loom of the oar, reaching out and hauling in
+    rel(rh, J.RSHO, -0.06, -0.22 - 0.06 * stroke, 0.3 + 0.18 * stroke);
+    rel(lh, J.LSHO, 0.06, -0.22 - 0.06 * stroke, 0.3 + 0.18 * stroke);
   }
   if (fl > 0) {
     rh[1] += 0.12 * fl; rh[2] -= 0.15 * fl; rh[0] += 0.1 * fl;

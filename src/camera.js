@@ -26,7 +26,7 @@ export class CameraRig {
     dom.addEventListener('wheel', e => {
       e.preventDefault();
       if (this.mode !== 'free') this.setMode('free');
-      this.dist = clamp(this.dist * Math.pow(1.0015, e.deltaY), 4, 450);
+      this.dist = clamp(this.dist * Math.pow(1.0015, e.deltaY), 4, Math.max(450, this.overviewDist || 0));
     }, { passive: false });
     dom.addEventListener('mousedown', e => {
       if (e.button === 1 || (e.button === 0 && e.altKey)) { this.rotating = true; e.preventDefault(); }
@@ -40,7 +40,12 @@ export class CameraRig {
     });
   }
   setMode(m, world) {
-    if (m === 'free' && this.mode !== 'free') {
+    if (m === 'overview' && world) {
+      // start over the busiest spot, looking north over the Legion's back
+      this.tour = null; this.tourT = 0;
+      this.nextStop(world, true);
+      this.yaw = Math.PI; this.pitch = 0.95; this.first = true;
+    } else if (m === 'free' && this.mode !== 'free' && this.mode !== 'overview') {
       // hand control back from wherever the camera currently is
       this.target.copy(this.smoothLook);
       this.target.y = 0;
@@ -53,8 +58,87 @@ export class CameraRig {
     this.shotT = 0;
     if (m === 'follow' && world && (!this.follow || !isActive(this.follow))) this.follow = this.pickInteresting(world);
   }
+  // the box round every man still on the field, as a target and distance for the overview
+  frameAll(world) {
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const a of world.agents) {
+      if (!isActive(a)) continue;
+      if (a.x < x0) x0 = a.x; if (a.x > x1) x1 = a.x;
+      if (a.z < z0) z0 = a.z; if (a.z > z1) z1 = a.z;
+    }
+    // and the boats of a landing, with the men still in them
+    if (world.landing) for (const b of world.landing.boats) {
+      if (!b.cargo.length) continue;
+      if (b.x < x0) x0 = b.x; if (b.x > x1) x1 = b.x;
+      if (b.z < z0) z0 = b.z; if (b.z > z1) z1 = b.z;
+    }
+    if (x0 > x1) return null;
+    // the frame is about 85 degrees wide and 55 high; the tilt stretches the depth
+    return { x: (x0 + x1) / 2, z: (z0 + z1) / 2, dist: Math.max(120, (x1 - x0 + 50) * 0.6, (z1 - z0 + 50) * 1.15) };
+  }
+  // Overview tour: a high view showing about a ninth of the whole field, moving slowly from one
+  // crowd of men to the next. Crowds are found by counting men in cells the size of the view.
+  nextStop(world, jump) {
+    const f = this.frameAll(world);
+    if (!f) return;
+    const dist = Math.max(90, f.dist / 3), cell = dist * 0.8;
+    const bins = new Map();
+    for (const a of world.agents) {
+      if (!isActive(a)) continue;
+      const k = Math.floor(a.x / cell) * 4096 + Math.floor(a.z / cell);
+      let c = bins.get(k);
+      if (!c) { c = { n: 0, x: 0, z: 0 }; bins.set(k, c); }
+      c.n++; c.x += a.x; c.z += a.z;
+    }
+    // men in the landing boats count as well
+    if (world.landing) for (const b of world.landing.boats) {
+      if (!b.cargo.length) continue;
+      const k = Math.floor(b.x / cell) * 4096 + Math.floor(b.z / cell);
+      let c = bins.get(k);
+      if (!c) { c = { n: 0, x: 0, z: 0 }; bins.set(k, c); }
+      const n = b.cargo.length * 1.5;
+      c.n += n; c.x += b.x * n; c.z += b.z * n; c.boats = (c.boats || 0) + n;
+    }
+    // where the two armies meet counts double
+    const spots = [...bins.values()].map(c => ({ x: c.x / c.n, z: c.z / c.n, n: c.n, boats: c.boats || 0 }));
+    for (const sp of spots) for (const o of spots) if (o !== sp && Math.hypot(o.x - sp.x, o.z - sp.z) < cell * 1.5) sp.n += o.n * 0.5;
+    spots.sort((a, b) => b.n - a.n);
+    const top = spots.slice(0, 6);
+    // go somewhere not seen lately, the busier the likelier
+    const seen = this.tourSeen || (this.tourSeen = []);
+    const fresh = top.filter(sp => !seen.some(v => Math.hypot(v.x - sp.x, v.z - sp.z) < cell));
+    const pool = fresh.length ? fresh : top;
+    let pick = pool[0];
+    // the first look before a landing goes to the boats
+    if (jump) for (const sp of spots) if (sp.boats > (pick.boats || 0)) pick = sp;
+    if (!jump && pool.length > 1) { let r = rand() * pool.reduce((t, sp) => t + sp.n, 0); for (const sp of pool) { r -= sp.n; if (r <= 0) { pick = sp; break; } } }
+    seen.push({ x: pick.x, z: pick.z });
+    if (seen.length > 3) seen.shift();
+    this.tour = { x: pick.x, z: pick.z, dist, yaw0: this.yaw, spin: (rand() < 0.5 ? -1 : 1) * 0.025 };
+    this.tourT = randRange(9, 13);
+    if (jump) { this.target.set(pick.x, 0, pick.z); this.dist = dist; }
+  }
   followAgent(a) { this.follow = a; this.mode = 'follow'; }
 
+  // a living general or wing commander with the enemy at his horse's head, wounded, or just hit
+  commanderInDanger(world) {
+    let best = null, bs = 0;
+    for (const army of world.armies) {
+      if (!army) continue;
+      for (const c of [army.general, ...army.wings.map(w => w.commander)]) {
+        if (!c || !isActive(c) || !c.crew || !c.crew[0] || !c.crew[0].alive) continue;
+        const r = c.crew[0];
+        let s = 0;
+        const e = world.nearestEnemy(c, 22);
+        if (e) s += 3 + (22 - Math.hypot(e.x - c.x, e.z - c.z)) * 0.2;
+        if (r.hp < r.maxHp * 0.6) s += 2;
+        if (world.time - (c.lastHitT === undefined ? -10 : c.lastHitT) < 4) s += 2;
+        if (s > 0 && c.rank >= 3) s += 2; // the general above all
+        if (s > bs) { bs = s; best = c; }
+      }
+    }
+    return bs >= 3 ? best : null;
+  }
   pickInteresting(world) {
     const cands = [];
     for (const a of world.agents) {
@@ -86,7 +170,21 @@ export class CameraRig {
 
   update(dt, world) {
     const k = this.keys;
-    if (this.mode === 'free') {
+    if (this.mode === 'overview') {
+      // glide to the next crowd and turn slowly round it
+      this.tourT -= dt;
+      if (this.tourT <= 0 || !this.tour) this.nextStop(world, false);
+      const t = this.tour;
+      if (t) {
+        const e = 1 - Math.exp(-dt * 0.45);
+        this.target.x += (t.x - this.target.x) * e; this.target.z += (t.z - this.target.z) * e;
+        this.dist += (t.dist - this.dist) * e;
+        this.yaw += t.spin * dt;
+        this.yaw += (Math.PI - this.yaw) * dt * 0.02; // never far from looking north
+        this.overviewDist = Math.max(this.dist, t.dist);
+      }
+    }
+    if (this.mode === 'free' || this.mode === 'overview') {
       const sp = this.dist * 0.9 * dt * (k.has('ShiftLeft') ? 3 : 1);
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
       const rx = -fz, rz = fx;
@@ -133,6 +231,33 @@ export class CameraRig {
     }
     // cinematic director
     this.shotT -= dt;
+    // cut away at once when a commander gets into trouble
+    this.dangerT = (this.dangerT || 0) - dt;
+    if (this.dangerT <= 0) {
+      this.dangerT = 1;
+      if (!(this.shot && this.shot.danger) && this.commanderInDanger(world)) this.shotT = 0;
+    }
+    if (this.shotT <= 0 || !this.shot || (!this.shot.boat && (!this.shot.a || this.shot.a.state === 4))) {
+      // a landing under way: boats pulling for the beach and men jumping out into the surf
+      // a general or a wing commander in danger comes before anything else
+      const cmd = this.commanderInDanger(world);
+      const L = world.landing;
+      const boats = L ? L.boats.filter(b => b.state === 'out' || b.state === 'unload') : [];
+      const fighting = world.regs.some(r => r.engaged);
+      if (cmd) {
+        const types = ['side', 'high', 'crane', 'chase'];
+        this.shot = { a: cmd, danger: true, type: types[Math.floor(rand() * types.length)], side: rand() < 0.5 ? 1 : -1, t: 0, ang: rand() * 6.28 };
+        this.shotT = randRange(6, 9);
+        this.cut = true;
+      } else if (boats.length && rand() < (fighting ? 0.12 : 0.35)) {
+        const b = boats[Math.floor(rand() * boats.length)];
+        const types = b.state === 'unload' ? ['beach', 'beach', 'boatHigh'] : ['boatChase', 'boatSide', 'boatHigh', 'boatFront'];
+        this.shot = { boat: b, type: types[Math.floor(rand() * types.length)], side: rand() < 0.5 ? 1 : -1, t: 0, ang: rand() * 6.28 };
+        this.shotT = randRange(6, 9);
+        this.cut = true;
+      } else this.shot = null; // an ordinary shot, picked below
+    }
+    if (this.shot && this.shot.boat) { this.boatShot(dt, world); return; }
     if (this.shotT <= 0 || !this.shot || !this.shot.a || this.shot.a.state === 4) {
       const a = this.pickInteresting(world);
       if (!a) return;
@@ -235,6 +360,42 @@ export class CameraRig {
     }
     if (this.cut) { this.smoothPos.copy(this.pos); this.smoothLook.copy(this.look); this.cut = false; }
     this.apply(dt, s.type === 'front' ? 30 : s.type === 'wide' || s.type === 'vista' ? 3 : 5);
+  }
+  boatShot(dt, world) {
+    const s = this.shot, b = s.boat, WL = world.stage.WL;
+    s.t += dt;
+    const fx = Math.sin(b.heading), fz = Math.cos(b.heading), rx = fz, rz = -fx;
+    const bowX = b.x + fx * b.len * 0.5, bowZ = b.z + fz * b.len * 0.5;
+    switch (s.type) {
+      case 'boatChase':
+        // astern and a little above: the boat's crowd and the beach ahead
+        this.pos.set(b.x - fx * 15 + rx * 4 * s.side, WL + 5, b.z - fz * 15 + rz * 4 * s.side);
+        this.look.set(b.x + fx * 14, WL + 1, b.z + fz * 14);
+        break;
+      case 'boatSide':
+        this.pos.set(b.x + rx * 17 * s.side + fx * 5, WL + 2.6, b.z + rz * 17 * s.side + fz * 5);
+        this.look.set(b.x + fx * 2, WL + 1, b.z + fz * 2);
+        break;
+      case 'boatFront':
+        // from the beach, looking out at the boats coming in
+        if (s.px === undefined) { s.px = b.dx + rx * 10 * s.side; s.pz = b.dz + 9; }
+        this.pos.set(s.px, groundHeight(s.px, s.pz) + 1.8, s.pz);
+        this.look.set(b.x, WL + 1.2, b.z);
+        break;
+      case 'beach':
+        // on the sand beside the bow as the men step out
+        if (s.px === undefined) { s.px = bowX + fx * 12 + rx * 9 * s.side; s.pz = bowZ + fz * 12 + rz * 9 * s.side; }
+        this.pos.set(s.px, groundHeight(s.px, s.pz) + 1.7, s.pz);
+        this.look.set(bowX - fx * 1, WL + 0.9, bowZ - fz * 1);
+        break;
+      default: { // boatHigh: slow crane round the boat
+        const ang = s.ang + s.t * 0.1;
+        this.pos.set(b.x + Math.cos(ang) * 26, WL + 15 + s.t, b.z + Math.sin(ang) * 26);
+        this.look.set(b.x, WL, b.z);
+      }
+    }
+    if (this.cut) { this.smoothPos.copy(this.pos); this.smoothLook.copy(this.look); this.cut = false; }
+    this.apply(dt, s.type === 'beach' || s.type === 'boatFront' ? 30 : 5);
   }
   apply(dt, stiffness) {
     const k = this.first ? 1 : 1 - Math.exp(-stiffness * dt);

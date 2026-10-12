@@ -28,7 +28,7 @@ export function isLadder(x, z) { return (STAGE.flagAt(x, z) & F_LADDER) !== 0; }
 
 export const WORLD_HALF = 500;
 
-export function buildTerrain(scene, ps1Hook, stage) {
+export function buildTerrain(scene, stage) {
   setSeed(99);
   const group = new THREE.Group();
   const seg = 250;
@@ -53,6 +53,13 @@ export function buildTerrain(scene, ps1Hook, stage) {
       if (d > 0.3) c.lerp(mud, smoothstep(0.3, 1.5, d));
     }
     if (stage.city && stage.insideCity(x, z)) c.lerp(paved, 0.6);
+    if (stage.harbor) {
+      const Hb = stage.harbor, s = z - stage.shoreZ(x), d = stage.basinD(x, z);
+      c.lerp(sand, smoothstep(30, 8, s) * smoothstep(-2, 6, d - 20) * 0.8);
+      // paved quays and town streets
+      const town = Math.abs(x) < Hb.townX + 6 && z > Hb.townZ0 - 6 && z < Hb.townZ1 + 6;
+      c.lerp(paved, Math.max(smoothstep(24, 12, d) * smoothstep(-4, 6, s), town ? 0.55 : 0));
+    }
     if (stage.id === 'canyon') c.lerp(rock, smoothstep(1.5, 9, h) * 0.85);
     c.multiplyScalar(0.92 + rand() * 0.12);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
@@ -60,15 +67,30 @@ export function buildTerrain(scene, ps1Hook, stage) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  ps1Hook(mat);
   const mesh = new THREE.Mesh(geo, mat);
   group.add(mesh);
 
-  if (stage.hasWater) {
+  if (stage.harbor) {
+    // open sea out to the horizon; the land hides the part under the beach and the town
+    const SEA = 2600;
+    const wg = new THREE.PlaneGeometry(SEA * 2, SEA, 104, 52);
+    wg.rotateX(-Math.PI / 2);
+    const wp = wg.attributes.position;
+    for (let i = 0; i < wp.count; i++) {
+      const x = wp.getX(i), z = wp.getZ(i) - SEA / 2;  // north edge at z = 0
+      // beyond the edge of the land the sea stops at the coast
+      wp.setZ(i, z > -1 && Math.abs(x) > WORLD_HALF ? stage.harbor.shore + 10 : z);
+    }
+    const wmat = new THREE.MeshLambertMaterial({ color: 0x356a8c, transparent: true, opacity: 0.8, flatShading: true });
+    const water = new THREE.Mesh(wg, wmat);
+    water.position.y = stage.WL;
+    water.renderOrder = 1;
+    group.add(water);
+    group.userData.water = water;
+  } else if (stage.hasWater) {
     const wg = new THREE.PlaneGeometry(WORLD_HALF * 2, 60, 100, 6);
     wg.rotateX(-Math.PI / 2);
     const wmat = new THREE.MeshLambertMaterial({ color: 0x3d6f8f, transparent: true, opacity: 0.78, flatShading: true });
-    ps1Hook(wmat);
     const water = new THREE.Mesh(wg, wmat);
     // follow the meander
     const wp = wg.attributes.position;
@@ -79,19 +101,18 @@ export function buildTerrain(scene, ps1Hook, stage) {
     group.userData.water = water;
   }
 
-  buildScenery(group, ps1Hook, stage);
+  buildScenery(group, stage);
   scene.add(group);
   return { group, ground: mesh };
 }
 
-function buildScenery(group, ps1Hook, stage) {
+function buildScenery(group, stage) {
   const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 2.5, 5).translate(0, 1.25, 0);
   const crownGeo = new THREE.ConeGeometry(2.2, 6, 6).translate(0, 5, 0);
   const rockGeo = new THREE.DodecahedronGeometry(1.2, 0);
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a4028, flatShading: true });
   const crownMat = new THREE.MeshLambertMaterial({ color: 0x3f5f2a, flatShading: true });
   const rockMat = new THREE.MeshLambertMaterial({ color: 0x8a8578, flatShading: true });
-  [trunkMat, crownMat, rockMat].forEach(ps1Hook);
   const NT = 700, NR = 160;
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, NT);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, NT);
@@ -100,7 +121,8 @@ function buildScenery(group, ps1Hook, stage) {
   const col = new THREE.Color();
   const clearX = 210 * stage.S, clearZ = stage.city ? stage.city.zb + 30 : 190;
   const keepOut = (x, z) => (Math.abs(x) < clearX && z > -190 && z < clearZ) ||
-    (stage.hasWater && Math.abs(z - stage.riverZ(x)) < 22);
+    (stage.river && Math.abs(z - stage.riverZ(x)) < 22) ||
+    (stage.harbor && (z < stage.shoreZ(x) + 40 * stage.S || stage.basinD(x, z) < 40));
   let i = 0, guard = 0;
   while (i < NT && guard++ < 50000) {
     const x = (rand() * 2 - 1) * WORLD_HALF * 0.95, z = (rand() * 2 - 1) * WORLD_HALF * 0.95;
@@ -135,11 +157,11 @@ function buildScenery(group, ps1Hook, stage) {
 
   const mGeo = new THREE.ConeGeometry(1, 1, 5);
   const mMat = new THREE.MeshLambertMaterial({ color: 0x7a8494, flatShading: true });
-  ps1Hook(mMat);
   const NM = 40;
   const mountains = new THREE.InstancedMesh(mGeo, mMat, NM);
   for (let j = 0; j < NM; j++) {
-    const a = (j / NM) * Math.PI * 2 + rand() * 0.1;
+    // no mountains over the sea: the horizon stays open to the south
+    const a = stage.harbor ? 0.06 * Math.PI + (j / NM) * 0.88 * Math.PI + rand() * 0.05 : (j / NM) * Math.PI * 2 + rand() * 0.1;
     const r = 700 + rand() * 150;
     const h = 90 + rand() * 140, w = 160 + rand() * 120;
     p.set(Math.cos(a) * r, h * 0.5 - 10, Math.sin(a) * r);

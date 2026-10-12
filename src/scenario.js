@@ -1,6 +1,7 @@
 // Army deployments for each stage.
 import { Agent, Regiment } from './sim/world.js';
 import { Army, Wing } from './sim/command.js';
+import { Landing } from './sim/landing.js';
 import { randRange, setSeed } from './util.js';
 import { W_BANNER, SH_NONE } from './anim/human.js';
 import { K_INF, K_CAV, commanderLook, TEAM_FLAG } from './sim/defs.js';
@@ -97,6 +98,7 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   const st = world.stage;
   world.builder = b;
   if (st.kind === 'river') river(b, st);
+  else if (st.kind === 'harbor') harbor(b, st);
   else if (st.id === 'camp') camp(b, st);
   else if (st.kind === 'siege') siege(b, st);
   else if (st.id === 'canyon') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
@@ -161,7 +163,7 @@ function field(b, o = {}) {
 function river(b, st) {
   const S = st.S, id = st.id;
   // where the crossings are decides how tightly the armies bunch: one bridge draws everybody to it
-  const xm = { river: 1, ford: 0.85, bridge: 0.4, harbor: 0.75 }[id] || 1;
+  const xm = { river: 1, ford: 0.85, bridge: 0.4 }[id] || 1;
   const X = v => v * S * xm;
   b.armies[1].posture = 'defend';
   const wb = -150 * S * xm, fd = 150 * S * xm;
@@ -204,14 +206,65 @@ function river(b, st) {
   b.officer(0, '予備', 20, -96, '予備将');
   b.general(0, 0, -110, 6);
   // more pontoon companies where there is no bridge
-  const extra = id === 'harbor' ? [-60, 60] : id === 'bridge' ? [-60] : [];
+  const extra = id === 'bridge' ? [-60] : [];
   for (const x of extra) b.reg(0, 'engineer', 10, 2, X(x), -76, '架橋工兵', { wing: '予備' });
   const RENAME = {
     ford: { '橋頭ファランクス': '中央ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊', '架橋工兵': '工兵隊' },
     bridge: { '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊' },
-    harbor: { '橋頭ファランクス': '岸壁ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊' },
   }[id];
   if (RENAME) for (const r of b.w.regs) if (RENAME[r.name]) r.name = RENAME[r.name];
+}
+
+// ------------------------------------------------------------------ harbour landing
+// The Legion has landed on the beaches either side of the port; the basin keeps its two halves
+// apart until they meet in the town. The Kingdom holds the quays, the flanks and the square.
+function harbor(b, st) {
+  const S = st.S, H = st.harbor;
+  const Z = v => v * S;
+  // landing columns are spaced by the width of a cohort, so that big armies still fit on the beaches
+  const u = Math.max(1, (16 * b.sq * 1.4 + 14) / 52);
+  const X = v => v * u;
+  const E = H.Bw + 48 * S; // first landing column, just clear of the side warehouses
+  b.armies[1].posture = 'defend';
+  // Blue: archers on the north quay shoot across the basin; a phalanx holds the square
+  b.reg(1, 'archer', 20, 4, -24 * S, H.zN + Z(5), '岸壁弓兵', { wing: '中央' });
+  b.reg(1, 'xbow', 20, 3, 24 * S, H.zN + Z(5), '岸壁弩兵', { wing: '中央' });
+  b.reg(1, 'pike', 16, 6, 0, H.square.z, '広場ファランクス', { wing: '中央', q: 0.65 });
+  b.reg(1, 'spear', 16, 6, -E - X(40), Z(-34), '西岸守備隊', { wing: '左翼', q: 0.55 });
+  b.reg(1, 'sling', 14, 3, -E - X(10), Z(-48), '投石兵', { wing: '左翼' });
+  b.reg(1, 'sword', 14, 6, -E - X(95), Z(-28), '市民兵', { wing: '左翼', q: 0.35 });
+  b.reg(1, 'axe', 16, 6, E + X(40), Z(-34), '東岸守備隊', { wing: '右翼', q: 0.45 });
+  b.reg(1, 'camel', 8, 3, E + X(100), Z(-16), '駱駝騎兵', { wing: '右翼' });
+  b.reg(1, 'hcav', 8, 3, E + X(60), Z(4), '弓騎兵', { wing: '右翼' });
+  b.reg(1, 'ele', Math.max(2, Math.round(4 * b.sq)), 1, 0, H.townZ1 + Z(20), '戦象隊', { wing: '予備', role: 'reserve', fixed: true });
+  b.reg(1, 'mace', 14, 6, -60 * S, H.townZ1 + Z(22), '徴募兵', { wing: '予備', role: 'reserve', q: 0.3 });
+  b.reg(1, 'cata', 8, 3, 64 * S, H.townZ1 + Z(26), '重装騎兵', { wing: '予備', role: 'reserve', q: 0.8 });
+  b.officer(1, '左翼', -E - X(40), Z(-12), '左翼将');
+  b.officer(1, '中央', 0, H.square.z + Z(14), '中央将');
+  b.officer(1, '右翼', E + X(40), Z(-12), '右翼将');
+  b.officer(1, '予備', 20 * S, H.townZ1 + Z(38), '予備将');
+  b.general(1, 0, H.townZ1 + Z(48), 6);
+  // Red: two landings, west and east of the harbour
+  const zf = Z(-96);
+  b.reg(0, 'sword', 16, 7, -E, zf, '第1大隊', { wing: '右翼', q: 0.65 });
+  b.reg(0, 'sword', 16, 7, -E - X(52), zf, '第2大隊', { wing: '右翼', q: 0.6 });
+  b.reg(0, 'spear', 16, 6, -E - X(104), zf, '第4大隊', { wing: '右翼', q: 0.55 });
+  b.reg(0, 'archer', 20, 4, -E - X(26), zf + Z(20), '弓兵隊', { wing: '右翼' });
+  b.reg(0, 'jav', 14, 3, -E - X(84), zf + Z(18), '軽装兵', { wing: '右翼', q: 0.4 });
+  b.reg(0, 'dog', 10, 2, -E - X(104), zf - Z(20), '軍用犬', { wing: '右翼' });
+  b.reg(0, 'sword', 16, 7, E, zf, '第3大隊', { wing: '左翼', q: 0.65 });
+  b.reg(0, 'sword', 16, 7, E + X(52), zf, '第5大隊', { wing: '左翼', q: 0.6 });
+  b.reg(0, 'spear', 16, 6, E + X(104), zf, '槍兵隊', { wing: '左翼', q: 0.55 });
+  b.reg(0, 'sling', 16, 3, E + X(26), zf + Z(18), '投石兵', { wing: '左翼' });
+  b.reg(0, 'cav', 8, 3, E + X(104), zf - Z(20), '騎兵', { wing: '左翼' });
+  b.reg(0, 'spear', 16, 5, -E - X(44), zf - Z(18), '古参兵', { wing: '予備', role: 'reserve', q: 0.9 });
+  b.reg(0, 'sword', 14, 5, E + X(44), zf - Z(18), '海兵隊', { wing: '予備', role: 'reserve', q: 0.75 });
+  b.officer(0, '右翼', -E - X(10), zf - Z(14), '右翼将');
+  b.officer(0, '左翼', E + X(10), zf - Z(14), '左翼将');
+  b.officer(0, '予備', E + X(74), zf - Z(22), '予備将');
+  b.general(0, -E - X(74), zf - Z(18), 6);
+  // and all of them are still out at sea
+  b.w.landing = new Landing(b.w);
 }
 
 // ------------------------------------------------------------------ siege

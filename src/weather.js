@@ -89,12 +89,15 @@ export class Weather {
     for (const n of NUM) c[n] += (t[n] - c[n]) * k;
     for (const n of COL) c[n].lerp(this.tmp.set(t[n]), k);
     for (let i = 0; i < 3; i++) c.sunPos[i] += (t.sunPos[i] - c.sunPos[i]) * k;
+    if (this.fogScaleTarget !== undefined) this.fogScale = (this.fogScale || 1) + (this.fogScaleTarget - (this.fogScale || 1)) * (1 - Math.exp(-dt * 0.8));
     this.apply();
     if (c.rain > 0.02) this.stepRain(dt);
   }
   apply() {
     const c = this.cur;
-    this.fog.color.copy(c.fog); this.fog.near = c.near; this.fog.far = c.far;
+    // fogScale > 1 pushes the haze back (the overview before the battle sees the whole field)
+    const fs = this.fogScale || 1;
+    this.fog.color.copy(c.fog); this.fog.near = c.near * fs; this.fog.far = c.far * fs;
     this.scene.background.copy(c.bottom);
     this.skyMat.uniforms.top.value.copy(c.top); this.skyMat.uniforms.bottom.value.copy(c.bottom);
     this.hemi.color.copy(c.hemiSky); this.hemi.groundColor.copy(c.hemiGround); this.hemi.intensity = c.hemi;

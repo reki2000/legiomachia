@@ -11,6 +11,13 @@ const tmpS = { x: 0, z: 0, tx: 0, tz: 1 };
 const tmpP = { x: 0, z: 0, tx: 0, tz: 1 };
 
 function homeZ(team) { return team === 0 ? -330 : 330; }
+// harbour: a routed legionary who wades out past the beach is taken off by the boats
+function reembark(st, a) {
+  if (!st.harbor || a.team !== 0 || !a.fleeing || a.z > st.shoreZ(a.x) - 4) return false;
+  if (st.WL - st.floorAt(a.x, a.z) < 0.3) return false;
+  a.state = S_GONE;
+  return true;
+}
 
 // ======================================================================= regiments
 
@@ -38,11 +45,12 @@ export function updateRegiment(w, reg, dt) {
     if (a.target && a.tdist < 4) { eng++; fx += a.x; fz += a.z; fn++; }
   }
   reg.alive = n;
-  if (n === 0) { reg.order = 'dead'; reg.path = null; return; }
+  const sea = reg.aboard ? reg.aboard.length : 0; // still aboard the transports
+  if (n === 0) { if (!sea) { reg.order = 'dead'; reg.path = null; } return; }
   reg.cx = sx / n; reg.cz = sz / n;
   reg.engaged = eng > n * 0.12;
   reg.morale = mor / n; reg.stamina = sta / n; reg.fleeFrac = flee / n;
-  reg.casualty = 1 - n / Math.max(1, reg.initial);
+  reg.casualty = 1 - (n + sea) / Math.max(1, reg.initial);
 
   reg.compactT -= dt;
   if (reg.compactT <= 0) {
@@ -259,9 +267,16 @@ export function thinkInf(w, a, dt) {
   if (a.swimming) {
     // strike out for the nearer bank
     const st2 = w.stage;
-    const zc = st2.river ? st2.riverZ(a.x) : 0;
-    const side = a.fleeing ? (a.team === 0 ? -1 : 1) : (a.z > zc ? 1 : -1);
-    a.dvx = 0; a.dvz = side * 1;
+    if (st2.harbor) {
+      // the Legion's men swim out to the boats when they run; everyone else makes for land
+      if (reembark(st2, a)) return;
+      st2.landDir(a.x, a.z, tmpS);
+      a.dvx = tmpS.x; a.dvz = tmpS.z;
+    } else {
+      const zc = st2.river ? st2.riverZ(a.x) : 0;
+      const side = a.fleeing ? (a.team === 0 ? -1 : 1) : (a.z > zc ? 1 : -1);
+      a.dvx = 0; a.dvz = side * 1;
+    }
     w.setTarget(a, null);
     return;
   }
@@ -274,6 +289,7 @@ export function thinkInf(w, a, dt) {
     const v = (a.T.run || 5) * a.runMul;
     a.dvx = dx / l * v; a.dvz = dz / l * v;
     if (Math.abs(a.z) > 320 || Math.abs(a.x) > 440) a.state = S_GONE;
+    reembark(w.stage, a);
     return;
   }
 
@@ -735,6 +751,7 @@ function fleeMount(w, a, dt) {
   a.dh = Math.atan2(p[0] - a.x, p[1] - a.z);
   a.dspd = a.T.max * 0.85;
   if (Math.abs(a.z) > 320 || Math.abs(a.x) > 440) a.state = S_GONE;
+  reembark(w.stage, a);
 }
 
 export function thinkEle(w, a, dt) {
@@ -814,6 +831,7 @@ export function thinkDog(w, a, dt) {
     const hz = homeZ(a.team);
     moveToward(w, a, a.x, hz, T.max, 0, dt);
     if (Math.abs(a.z) > 320) a.state = S_GONE;
+    reembark(w.stage, a);
     return;
   }
   if (reg.order !== 'charge' || w.phase !== 'battle') { dogFollow(w, a, dt); return; }

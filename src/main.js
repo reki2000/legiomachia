@@ -61,38 +61,16 @@ let skyMat, weather;
   scene.add(sky);
 }
 
-// PS1 style: vertex snapping to a coarse screen grid + low internal resolution
-const ps1 = { uSnap: { value: 0 }, uSnapRes: { value: new THREE.Vector2(160, 120) } };
-function ps1Hook(mat) {
-  mat.onBeforeCompile = sh => {
-    sh.uniforms.uSnap = ps1.uSnap;
-    sh.uniforms.uSnapRes = ps1.uSnapRes;
-    sh.vertexShader = 'uniform float uSnap; uniform vec2 uSnapRes;\n' + sh.vertexShader.replace(
-      '#include <project_vertex>',
-      `#include <project_vertex>
-      if (uSnap > 0.5) { vec4 p = gl_Position; p.xy = floor(p.xy / p.w * uSnapRes + 0.5) / uSnapRes * p.w; gl_Position = p; }`);
-  };
-}
-let ps1On = false;
-function setPs1(on) {
-  ps1On = on;
-  ps1.uSnap.value = on ? 1 : 0;
-  container.classList.toggle('pixel', on);
-  renderer.setPixelRatio(on ? 0.4 : Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  $('cPs1').checked = on;
-}
-
 // ------------------------------------------------------------------ stage & world
 const stage = buildStage(stageKind, SIZES[sizeKey]);
 setStage(stage);
 const nav = new Nav(stage);
-const terrain = buildTerrain(scene, ps1Hook, stage);
-const stageR = new StageRenderer(scene, stage, ps1Hook);
+const terrain = buildTerrain(scene, stage);
+const stageR = new StageRenderer(scene, stage);
 
 const capK = Math.max(1, SIZES[sizeKey]) * 1.3;
-const dyn = new SegmentSet(scene, ps1Hook, { box: Math.round(60000 * capK), taper: Math.round(9000 * capK), cyl: Math.round(12000 * capK) });
-const stat = new SegmentSet(scene, ps1Hook, { box: Math.round(50000 * capK), taper: Math.round(7000 * capK), cyl: Math.round(8000 * capK) });
+const dyn = new SegmentSet(scene, { box: Math.round(60000 * capK), taper: Math.round(9000 * capK), cyl: Math.round(12000 * capK) });
+const stat = new SegmentSet(scene, { box: Math.round(50000 * capK), taper: Math.round(7000 * capK), cyl: Math.round(8000 * capK) });
 const shadows = makeShadowPool(scene, Math.round(5000 * capK));
 const fx = new FX(scene);
 fx.setFog(FOG);
@@ -125,12 +103,19 @@ world.on((type, data) => onWorldEvent(type, data));
 const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
 
 const rig = new CameraRig(camera, renderer.domElement);
-if (stage.kind === 'siege') { rig.target.set(0, 0, 0); rig.dist = stage.id === 'camp' ? 80 : 110; rig.pitch = 0.42; }
-// the cinematic camera is the default; ?cam=free (or follow) starts in another mode
-{
-  const cam = ['free', 'follow', 'cine'].includes(params.get('cam')) ? params.get('cam') : 'cine';
-  rig.setMode(cam, world);
-  $('sCam').value = cam;
+// before the battle the camera always looks down on the whole field; the chosen mode
+// (cinematic by default, ?cam=free or follow) takes over when the battle starts
+let battleCam = ['free', 'follow', 'cine', 'overview'].includes(params.get('cam')) ? params.get('cam') : 'cine';
+$('sCam').value = battleCam;
+rig.setMode('overview', world);
+// the overview sits far back: push the haze away with it so the field stays clear
+const overviewFog = () => (rig.mode === 'overview' ? Math.max(1, (rig.dist * 1.7) / weather.cur.far) : 1);
+weather.fogScale = weather.fogScaleTarget = overviewFog();
+weather.apply();
+function setCam(m) {
+  $('sCam').value = m;
+  if (world.phase === 'deploy') battleCam = m; // remembered for the start
+  else rig.setMode(m, world);
 }
 const selection = new Set();
 let paused = false, timeScale = 1, slowmo = false, deployT = 0;
@@ -175,9 +160,8 @@ function onWorldEvent(type, data) {
 $('bStart').onclick = () => startBattle();
 $('bPause').onclick = () => togglePause();
 $('sSpeed').onchange = e => { timeScale = Number(e.target.value); slowmo = false; };
-$('sCam').onchange = e => rig.setMode(e.target.value, world);
+$('sCam').onchange = e => setCam(e.target.value);
 $('cAuto').onchange = e => { world.auto[0] = e.target.checked; };
-$('cPs1').onchange = e => setPs1(e.target.checked);
 // background music: on by default, starts with the first click / key press (browsers block audio before that)
 {
   let saved = null;
@@ -214,6 +198,7 @@ document.querySelectorAll('#selPanel button[data-t]').forEach(b => { b.onclick =
 
 function startBattle() {
   sound.unlock();
+  if (world.phase === 'deploy' && battleCam !== 'overview') rig.setMode(battleCam, world);
   world.start();
   $('bStart').disabled = true;
 }
@@ -226,10 +211,10 @@ window.addEventListener('keydown', e => {
     case 'Enter': startBattle(); break;
     case 'KeyM': $('cBgm').click(); break;
     case 'Space': togglePause(); e.preventDefault(); break;
-    case 'Digit1': rig.setMode('free', world); $('sCam').value = 'free'; break;
-    case 'Digit2': rig.setMode('follow', world); $('sCam').value = 'follow'; break;
-    case 'Digit3': rig.setMode('cine', world); $('sCam').value = 'cine'; break;
-    case 'KeyP': setPs1(!ps1On); break;
+    case 'Digit1': setCam('free'); break;
+    case 'Digit2': setCam('follow'); break;
+    case 'Digit3': setCam('cine'); break;
+    case 'Digit4': setCam('overview'); break;
     case 'KeyZ': slowmo = !slowmo; break;
     case 'KeyH': issueOrder('hold'); break;
     case 'KeyC': issueOrder('charge'); break;
@@ -465,8 +450,9 @@ function renderTree() {
     h += `<div class="wing ${alive ? '' : 'dead'}" data-wing="${wing.name}">${wing.name}${c ? ' ― ' + name : ''}${wing.role === 'reserve' && !wing.committed ? ' (予備)' : ''}</div>`;
     for (const r of wing.regs) {
       if (r.T.commander) continue;
-      const cls = r.alive === 0 ? 'dead' : r.order === 'rout' ? 'rout' : '';
-      h += `<div class="reg ${cls} ${selection.has(r) ? 'sel' : ''}" data-reg="${r.id}"><span class="n">${r.name}</span><span>${r.alive}</span>${bar(r.alive / r.initial)}${bar(r.morale, 'm')}</div>`;
+      const sea = r.aboard ? r.aboard.length : 0; // still aboard ship (harbour landing)
+      const cls = r.alive === 0 && !sea ? 'dead' : r.order === 'rout' ? 'rout' : '';
+      h += `<div class="reg ${cls} ${selection.has(r) ? 'sel' : ''}" data-reg="${r.id}"><span class="n">${r.name}</span><span>${sea ? `${r.alive}<span class="small">+船${sea}</span>` : r.alive}</span>${bar((r.alive + sea) / r.initial)}${bar(r.morale, 'm')}</div>`;
     }
   }
   el.innerHTML = h;
@@ -540,6 +526,7 @@ function frame(now) {
   }
   const t1 = performance.now();
   rig.update(rdt, world);
+  weather.fogScaleTarget = overviewFog();
   camera.updateMatrixWorld();
   bodies.emit(world, camera, selection, stageR);
   fx.uScale.value = window.innerHeight * renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
@@ -572,7 +559,7 @@ requestAnimationFrame(frame);
 
 // debug handle for headless tests
 window.__battle = {
-  world, rig, camera, renderer, startBattle, setPs1, stage, sound,
+  world, rig, camera, renderer, startBattle, stage, sound,
   advance(sec) { const n = Math.round(sec / simStep); const t = performance.now(); for (let i = 0; i < n; i++) world.update(simStep); return (performance.now() - t) / n; },
   view(x, z, dist, pitch, yaw) { rig.setMode('free'); rig.target.set(x, 0, z); rig.dist = dist; rig.pitch = pitch; if (yaw !== undefined) rig.yaw = yaw; rig.first = true; },
 };

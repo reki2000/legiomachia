@@ -1,7 +1,7 @@
 // Turns skeleton joints into instanced segments (people, animals, vehicles, engines).
 import * as THREE from 'three';
 import {
-  J, poseHuman, poseHumanFar, setBasisYaw, weaponHidden, SEAT_GROUND,
+  J, poseHuman, poseHumanFar, setBasisYaw, weaponHidden, SEAT_GROUND, SEAT_ROW,
   W_SWORD, W_SPEAR, W_BOW, W_AXE, W_MACE, W_PIKE, W_JAV, W_SLING, W_XBOW, W_HAMMER, W_BANNER,
   SH_ROUND, SH_RECT, SH_SMALL, SH_NONE, ACT_SHOOT, ACT_RELOAD,
 } from '../anim/human.js';
@@ -420,7 +420,8 @@ export class BodyRenderer {
     st.flush();
 
     let vis = 0;
-    const A = world.agents;
+    // men and horses still out in the landing boats are drawn with everyone else
+    const A = world.landing ? world.agents.concat(world.landing.passengers()) : world.agents;
     const self = this;
     const vtest = (x, y, z, r) => self.visible(x, y, z, r);
     const frame = this.frame;
@@ -508,6 +509,7 @@ export class BodyRenderer {
       }
     }
     this.visibleCount = vis;
+    if (world.landing) this.emitRowers(world.landing, world.stage.WL, cx, cy, cz);
 
     if (selection) {
       for (const r of selection) {
@@ -517,6 +519,25 @@ export class BodyRenderer {
     if (world.proj) world.proj.emit(S, vtest);
     if (stageR) stageR.emitDynamic(S, world, vtest);
     S.flush(); sh.flush();
+  }
+  // oarsmen in the landing boats: seated, facing aft, swinging forward and back with the stroke
+  emitRowers(L, WL, cx, cy, cz) {
+    const S = this.S;
+    for (const b of L.boats) {
+      if (!this.visible(b.x, WL + 1, b.z, b.len)) continue;
+      const dist = Math.hypot(b.x - cx, WL - cy, b.z - cz);
+      if (dist > 600) continue;
+      const lod = dist > 170 ? 2 : dist > 65 ? 1 : 0;
+      const fx = Math.sin(b.heading), fz = Math.cos(b.heading), rx = fz, rz = -fx;
+      const rowing = b.state === 'out' || b.state === 'back';
+      for (const r of b.rowers) {
+        const B = setBasisYaw(r.basis, b.x + fx * r.k + rx * r.s, WL + 0.2, b.z + fz * r.k + rz * r.s, b.heading + Math.PI);
+        r.st.idleT += 0.016;
+        r.st.rowPh = rowing ? b.oar * 2 : -1.2; // resting on the oars between strokes
+        poseHuman(r.joints, r.st, W_HAMMER, SH_NONE, SEAT_ROW, B);
+        emitHuman(S, r.joints, r.look, W_HAMMER, SH_NONE, true, false, lod, r.st);
+      }
+    }
   }
   emitMountBody(S, a, lod) {
     if (a.kind === K_CAV) emitQuad(S, a.mj, a.look, a.basis, ANIMALS[a.T.animal], true, lod);

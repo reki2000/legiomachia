@@ -37,6 +37,7 @@ export class Objective {
     const st = this.st;
     let x = 0, z = 0, r = 30;
     if (st.kind === 'river') { x = 0; z = st.riverZ(0) + st.river.half + 28; r = 28; }
+    else if (st.kind === 'harbor') ({ x, z, r } = st.harbor.square);
     else if (st.kind === 'siege') { const C = st.city; z = (C.z1 + C.zb) / 2; r = C.camp ? 18 : 24; }
     else if (st.id === 'forest') x = st.forestLaneX || 0;
     this.point = { x, z, r };
@@ -63,11 +64,12 @@ export class Objective {
   setupWaves() {
     const st = this.st, b = this.b;
     const X = v => v * st.S;
-    const zS = st.kind === 'siege' ? -150 : -190, zN = st.kind === 'river' ? 150 : 180;
+    // the Legion's reinforcements come ashore on the beaches when the field ends in the sea
+    const zS = st.kind === 'siege' ? -150 : st.kind === 'harbor' ? st.harbor.shore + 22 * st.S : -190, zN = st.kind === 'river' ? 150 : 180;
     const red = [
-      [75, 'sword', 12, 5, X(-60), zS, '増援 第5大隊', 0.65],
-      [75, 'sword', 12, 5, X(60), zS, '増援 第6大隊', 0.65],
-      [95, 'cav', 8, 3, 0, zS - 10, '増援 騎兵', 0.6],
+      [75, 'sword', 12, 5, X(st.harbor ? -170 : -60), zS, '増援 第5大隊', 0.65],
+      [75, 'sword', 12, 5, X(st.harbor ? 170 : 60), zS, '増援 第6大隊', 0.65],
+      [95, 'cav', 8, 3, X(st.harbor ? 230 : 0), zS - (st.harbor ? 0 : 10), '増援 騎兵', 0.6],
     ];
     // the Kingdom's relief force: behind the walls it is the attackers' rear that it falls upon
     const blue = st.kind === 'siege'

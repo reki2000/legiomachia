@@ -45,6 +45,7 @@ export class World {
     this.pathBudget = 0;
     this.stakeTmp = [];
     this.debris = [];
+    this.landing = null;      // men still at sea (harbour landing, landing.js)
     this.ended = false;
   }
   on(fn) { this.listeners.push(fn); }
@@ -173,6 +174,7 @@ export class World {
     if (this.objective) this.objective.update(dt);
     for (const r of this.regs) if (r.order !== 'dead') AI.updateRegiment(this, r, dt);
     if (this.engineering) this.engineering.update(dt);
+    if (this.landing) this.landing.update(dt);
     const A = this.agents, sn = this.stepN;
     for (let i = 0; i < A.length; i++) {
       const a = A[i];
@@ -1075,7 +1077,7 @@ export class World {
 
   counts() {
     const c = [0, 0];
-    for (const r of this.regs) if (r.order !== 'rout') c[r.team] += r.alive;
+    for (const r of this.regs) if (r.order !== 'rout') c[r.team] += r.alive + (r.aboard ? r.aboard.length : 0);
     return c;
   }
 }

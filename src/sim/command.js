@@ -206,6 +206,22 @@ export class Command {
     const w = this.w, st = w.stage;
     const claimed = new Map();
     const obj = w.objective;
+    // landing: the wing forms up on the beach until its last boatload is ashore; missile troops
+    // already landed shoot back at whatever is in range
+    if (wing.regs.some(r => r.aboard && r.aboard.length)) {
+      for (const reg of wing.regs) {
+        if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow || reg.kind === K_ENG) continue;
+        if (reg.kind === K_CAV && reg.T.commander) continue;
+        if (reg.type === 'guard') { this.guardAI(army, reg); continue; }
+        const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
+        if (W && W.ranged && !W.ranged.ammo) {
+          const e = w.nearestEnemyReg(reg);
+          if (e && Math.hypot(e.cx - reg.cx, e.cz - reg.cz) < W.ranged.range - 5) { if (reg.order !== 'fire' || reg.targetReg !== e) w.orderFire(reg, e); continue; }
+        }
+        this.holdGround(reg);
+      }
+      return;
+    }
     for (const reg of wing.regs) {
       if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow) continue;
       if (reg.kind === K_CAV && reg.T.commander) continue;

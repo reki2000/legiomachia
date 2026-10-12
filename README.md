@@ -4,7 +4,7 @@ An ancient battle simulator in the browser (WebGL / three.js, plain JavaScript).
 
 **Live demo: https://reki2000.github.io/legiomachia/**
 
-Infantry, cavalry, war elephants, chariots, camels, war dogs and siege engines march, charge and crash into each other — with PS1-era low-poly visuals and an emphasis on believable human motion.
+Infantry, cavalry, war elephants, chariots, camels, war dogs and siege engines march, charge and crash into each other — with low-poly visuals and an emphasis on believable human motion.
 
 ![Open field battle](docs/field.png)
 
@@ -18,7 +18,7 @@ npm run dev        # http://localhost:5173/
 npm run build      # static build in dist/
 ```
 
-URL parameters: `?stage=field|hills|forest|canyon|river|ford|bridge|harbor|siege|camp`, `?weather=clear|fog|rain|dusk|night`, `?mode=annihilate|capture|reinforce|retreat`, `?cam=cine|free|follow`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
+URL parameters: `?stage=field|hills|forest|canyon|river|ford|bridge|harbor|siege|camp`, `?weather=clear|fog|rain|dusk|night`, `?mode=annihilate|capture|reinforce|retreat`, `?cam=cine|free|follow|overview`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?autostart=<seconds>`
 
 ## Stages
 
@@ -31,7 +31,7 @@ URL parameters: `?stage=field|hills|forest|canyon|river|ford|bridge|harbor|siege
 | River crossing | A stone bridge, a wooden bridge and a ford. Regiments funnel into columns to cross. Defending engineers can destroy the wooden bridge, attacking engineers build a pontoon bridge. Men pushed into the river swim or drown. |
 | Ford | Shallows all along the river, with a few deep pools. No bridges. |
 | Broken bridge | Deep water and a single wooden bridge that the defenders tear down as the attackers approach; two pontoon sites. |
-| Harbour | A wide channel with no crossing at all and moored boats on the far bank: three engineer companies throw pontoon bridges under fire. |
+| Harbour | A landing: the Legion starts aboard transports anchored off the beaches either side of a port. Rowed boats ferry the men ashore a boatload at a time, flat boats bring the horses; each wing forms up on the beach until its last men have landed, while the Kingdom's archers shoot from the quays. Open sea to the south, a stone-quayed basin closed by a mole with a lighthouse, warehouses and a town behind; the basin splits the attack in two. Men pushed off the quay drown; routed legionaries wade out to the boats. |
 | Siege | A walled city with towers, a gate and houses. A battering ram breaks the gate, engineers carry and raise ladders, onagers hurl rocks at the walls. Defenders push ladders down; reserves inside the city fight at the breach. |
 | Camp raid | A palisaded army camp: lower, smaller, tents instead of houses; the same ladders, ram and gate. |
 
@@ -81,8 +81,7 @@ In the army tree on the left, clicking a commander selects every regiment under 
 | H / V / C / X / B | Hold / advance / charge / fire / fall back |
 | Panel buttons | Formation (tight / normal / loose; tight resists arrows), engineer tasks, hand back to AI |
 | Enter / Space / Z | Start battle / pause / slow motion |
-| 1 / 2 / 3, T | Camera: free / follow / cinematic; follow the soldier under the cursor |
-| P | PS1-style rendering (low resolution + vertex snapping) |
+| 1 / 2 / 3 / 4, T | Camera: free / follow / cinematic / overview (a high view drifting from one crowd to the next; always used before the battle starts); follow the soldier under the cursor. The cinematic camera cuts to a general or wing commander in danger. |
 | M | Toggle the background music |
 
 The UI text is in Japanese.
@@ -125,6 +124,7 @@ src/
   sim/objective.js    victory conditions: capture, reinforcements, retreat
   sim/command.js      chain of command, morale auras, hierarchical AI, stage plans
   sim/engineering.js  engineer tasks and siege engines
+  sim/landing.js      harbour landing: transports, boats ferrying men and horses ashore
   sim/projectiles.js  arrows, javelins, sling stones, bolts, onager rocks
   sim/ragdoll.js      PBD ragdoll aware of structures and water
   render/*            instanced rendering of bodies, structures and particles

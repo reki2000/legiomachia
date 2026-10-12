@@ -10,10 +10,10 @@ export const STAGE_NAMES = {
   river: '渡河戦', ford: '浅瀬の渡河戦', bridge: '落橋の渡河戦', harbor: '港の上陸戦',
   siege: '攻城戦', camp: '野営地襲撃',
 };
-// the three families share behaviour (AI, engineering tasks, navigation); the id picks the variant
+// the families share behaviour (AI, engineering tasks, navigation); the id picks the variant
 export const STAGE_FAMILY = {
   field: 'field', hills: 'field', forest: 'field', canyon: 'field',
-  river: 'river', ford: 'river', bridge: 'river', harbor: 'river',
+  river: 'river', ford: 'river', bridge: 'river', harbor: 'harbor',
   siege: 'siege', camp: 'siege',
 };
 
@@ -34,7 +34,7 @@ export class Stage {
     this.floor = null; this.flags = null;
     this.structs = []; this.gates = []; this.bridges = []; this.ladders = []; this.pontoons = []; this.stakes = [];
     this.stakeGrid = new Map();
-    this.river = null; this.city = null;
+    this.river = null; this.city = null; this.harbor = null;
     this.version = 0;
     this.listeners = [];
   }
@@ -72,6 +72,7 @@ export class Stage {
     return a + (b - a) * tz;
   }
   terrainExact(x, z) {
+    if (this.harbor) return this.harborHeight(x, z);
     let h = this.base(x, z);
     const R = this.river;
     if (R) {
@@ -97,6 +98,51 @@ export class Stage {
       h = h * (1 - m);
     }
     return h;
+  }
+
+  // ---------------------------------------------------------------- harbour
+  // The sea lies to the south. A rectangular basin with stone quays is cut into the coast and
+  // closed off by a mole with a narrow mouth; the town stands on the level ground behind it.
+  shoreZ(x) { return this.harbor.shore + 5 * Math.sin(x * 0.011 + 0.7) + 2.5 * Math.sin(x * 0.031 + 2); }
+  // signed distance to the basin's water edge (negative inside the basin)
+  basinD(x, z) {
+    const H = this.harbor;
+    const qx = Math.abs(x) - H.Bw + H.r, qz = Math.abs(z - (H.zS + H.zN) / 2) - (H.zN - H.zS) / 2 + H.r;
+    return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - H.r;
+  }
+  // the gap in the mole through which ships come in
+  harborMouth(x, z) { const H = this.harbor; return Math.abs(x) < H.E && z < H.zS + 4; }
+  // stone pier ground: the quay coping round the basin and the mole out at sea
+  onMole(x, z) {
+    const H = this.harbor, d = this.basinD(x, z);
+    if (d < -H.cope || this.harborMouth(x, z)) return false;
+    return d < 1.5 || (d < H.moleW && z < this.shoreZ(x) + 4);
+  }
+  harborHeight(x, z) {
+    const H = this.harbor, WL = this.WL;
+    const small = 0.5 * Math.sin(x * 0.019 + 0.5) * Math.cos(z * 0.016) + 0.25 * Math.sin(x * 0.047 + z * 0.041);
+    const hills = smoothstep(150 * this.S, 320 * this.S, z + 0.3 * Math.abs(x));
+    const big = 9 * Math.sin(x * 0.009 + 1.3) * Math.cos(z * 0.011 - 0.4) + 6 * Math.sin(x * 0.021 - z * 0.017) + 9;
+    const land = 1.4 + small + hills * big;
+    // a sandy beach shelving gently into the sea
+    const s = z - this.shoreZ(x);
+    let h = s >= 0 ? WL + 0.15 + (land - WL - 0.15) * smoothstep(0, 34, s) : Math.max(H.seaBed, WL + 0.15 + s * 0.09);
+    const d = this.basinD(x, z);
+    if (d < -0.5) return H.Q + (H.bed - H.Q) * smoothstep(-0.5, -1.5, d);
+    if (d < 6 && !this.harborMouth(x, z)) return H.Q; // hidden under the quay stones (the renderer draws them)
+    // the ground round the basin is levelled for the quays
+    if (d < 30) h += (H.Q - h) * smoothstep(30, 6, d) * smoothstep(-6, 4, s);
+    return h;
+  }
+  // which way a swimmer should strike out for land
+  landDir(x, z, out) {
+    const d = this.basinD(x, z);
+    let gx, gz;
+    if (d < 0) { gx = this.basinD(x + 1, z) - this.basinD(x - 1, z); gz = this.basinD(x, z + 1) - this.basinD(x, z - 1); }
+    else { gx = this.terrain(x + 2, z) - this.terrain(x - 2, z); gz = this.terrain(x, z + 2) - this.terrain(x, z - 2); }
+    const l = Math.hypot(gx, gz);
+    if (l < 1e-4) { out.x = 0; out.z = 1; } else { out.x = gx / l; out.z = gz / l; }
+    return out;
   }
 
   // ---------------------------------------------------------------- raster
@@ -241,6 +287,7 @@ export function buildStage(id, scale) {
   setSeed(4242);
   const st = new Stage(id, scale);
   if (st.kind === 'river') buildRiver(st);
+  else if (st.kind === 'harbor') buildHarbor(st);
   else if (st.kind === 'siege') buildSiege(st);
   if (id === 'hills') st.hilly = true;
   if (id === 'canyon') st.needsNav = true;
@@ -280,7 +327,6 @@ function buildForest(st) {
 
 // River family. river: a stone bridge, a wooden bridge and a ford. ford: shallows all along, with a
 // few deep pools. bridge: deep water and a single wooden bridge that can be torn down.
-// harbor: a wide channel with no crossing at all; moored boats on the far bank.
 function buildRiver(st) {
   const S = st.S, id = st.id;
   const X = Math.min(490, 420 * S);
@@ -292,9 +338,6 @@ function buildRiver(st) {
   } else if (id === 'bridge') {
     st.river = { amp: 4, freq: 0.012, half: 15, fordX: 0, fordHalf: -1e5, bed: -3.2, fordBed: -3.2 };
     half = 15;
-  } else if (id === 'harbor') {
-    st.river = { amp: 2.5, freq: 0.009, half: 36, fordX: 0, fordHalf: -1e5, bed: -3.4, fordBed: -3.4 };
-    half = 36;
   } else {
     st.river = { amp: 4, freq: 0.012, half: 13, fordX: 150 * S, fordHalf: 20, bed: -3.0, fordBed: -1.05 };
   }
@@ -307,13 +350,80 @@ function buildRiver(st) {
   } else if (id === 'bridge') {
     st.woodBridge = st.addBridge(0, 6, true);
     st.pontoonXs = [-45 * S, 45 * S];
-  } else if (id === 'harbor') {
-    // three engineer companies build pontoons side by side
-    st.pontoonXs = [-80 * S, 0, 80 * S];
-    // moored boats along the defenders' bank
-    for (const bx of [-130, -95, -50, 12, 52, 96, 140]) {
-      const x = bx * S, z = st.riverZ(x) + half - 3 + (bx % 3);
-      st.decor.push({ type: 'boat', x, z, heading: 1.57 + (bx % 7) * 0.05 });
+  }
+}
+
+// Harbour: the Legion has come ashore on the beaches either side of a port and must take the
+// town. The basin between the landing beaches splits the attack in two; the quays and the
+// warehouses round it are the defenders' line.
+function buildHarbor(st) {
+  const S = st.S;
+  const Bw = Math.round(46 * S);
+  // the whole port grows with the armies, along the coast and inland
+  const Z = v => Math.round(v * S);
+  const H = st.harbor = {
+    shore: Z(-135), Bw, zS: Z(-182), zN: Z(-40), r: 8, E: 12, Q: 1.1, bed: -3.6, seaBed: -6,
+    cope: 3.6, moleW: 9, townX: Math.round(Bw + 50 * S), townZ0: Z(-22), townZ1: Z(64), square: { x: 0, z: Z(10), r: Z(22) },
+  };
+  st.WL = -0.45; st.hasWater = true; st.needsNav = true;
+  const X = Math.round(H.townX + 30);
+  st.initRaster(-X, H.zS - H.moleW - 6, X, H.townZ1 + 10);
+  // the quay coping and the mole: crisp stone tops a little above the levelled ground
+  for (let iz = 0; iz < st.rh; iz++) {
+    for (let ix = 0; ix < st.rw; ix++) {
+      const x = st.rx0 + (ix + 0.5) * st.res, z = st.rz0 + (iz + 0.5) * st.res;
+      if (z < H.zN + 4 && st.onMole(x, z)) st.floor[iz * st.rw + ix] = H.Q + 0.08;
+    }
+  }
+  const Q = H.Q;
+  const block = (x0, z0, x1, z1, h, type = 'house') => {
+    st.setRect(x0, z0, x1, z1, Q + h, F_HOUSE);
+    st.structs.push({ type, x0, z0, x1, z1, h: Q + h, roof: rand() });
+  };
+  // warehouses along the north quay, with lanes through to the town
+  for (let x = -H.townX + 4; x < H.townX - 14;) {
+    const len = randRange(14, 22);
+    if (Math.abs(x + len / 2) < 12 + len / 2) { x += 6; continue; } // the street up from the quay
+    block(x, H.townZ0 - 2, x + len, H.townZ0 + 9, randRange(4.5, 6), 'warehouse');
+    x += len + randRange(5, 8);
+  }
+  // and along the side quays
+  for (const sx of [-1, 1]) {
+    for (let z = Z(-98); z < Z(-50);) {
+      const len = randRange(12, 16);
+      const x0 = sx > 0 ? Bw + 16 : -Bw - 28;
+      block(x0, z, x0 + 12, z + len, randRange(4, 5.5), 'warehouse');
+      z += len + randRange(6, 9);
+    }
+  }
+  // the town: houses round a square, a main street up from the quay and a cross street
+  const sq = H.square;
+  for (let z = H.townZ0 + 16; z < H.townZ1 - 8; z += 15) {
+    for (let x = -H.townX + 4; x < H.townX - 12; x += 15) {
+      const w = randRange(8, 11.5), d = randRange(8, 11), x0 = x + randRange(0, 2), z0 = z + randRange(0, 2);
+      if (Math.abs(x0 + w / 2) < 9 * S + w / 2) continue;                              // main street
+      if (Math.abs(z0 + d / 2 - Z(42)) < 6 * S + d / 2) continue;                       // cross street
+      if (Math.hypot(Math.max(0, Math.abs(x0 + w / 2 - sq.x) - w / 2), Math.max(0, Math.abs(z0 + d / 2 - sq.z) - d / 2)) < sq.r) continue;
+      if (rand() < 0.12) continue;
+      block(x0, z0, x0 + w, z0 + d, randRange(3.5, 5.5));
+    }
+  }
+  // lighthouse on the western mole head
+  const lx = -H.E - 7, lz = H.zS - 3;
+  st.setRect(lx - 3.5, lz - 3.5, lx + 3.5, lz + 3.5, Q + 14, F_HOUSE);
+  st.structs.push({ type: 'lighthouse', x0: lx - 3.5, z0: lz - 3.5, x1: lx + 3.5, z1: lz + 3.5, h: Q + 14 });
+  // boats moored in the basin, landing boats run up on the beaches, ships riding at anchor
+  for (let z = H.zN - 14; z > H.zS + 16; z -= randRange(11, 15)) {
+    for (const sx of [-1, 1]) if (rand() < 0.75) st.decor.push({ type: 'boat', x: sx * (Bw - 6.5), z, heading: randRange(-0.08, 0.08) });
+  }
+  for (let x = -Bw + 18; x < Bw - 16; x += randRange(21, 25)) st.decor.push({ type: 'ship', x, z: H.zN - 8.5, heading: Math.PI / 2 + randRange(-0.05, 0.05) });
+  // the Legion's transports ride at anchor off the landing beaches
+  st.transports = [];
+  for (const sx of [-1, 1]) {
+    for (let k = 0; k < 3; k++) {
+      const x = sx * (Bw + 70 * S + k * 72 * S), z = Math.max(-480, H.shore - 62 - (k % 2) * 14);
+      st.transports.push({ x, z, side: sx < 0 ? 0 : 1 });
+      st.decor.push({ type: 'ship', x, z, heading: Math.PI / 2 + randRange(-0.08, 0.08), big: true });
     }
   }
 }

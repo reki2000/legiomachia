@@ -116,9 +116,8 @@ export class SegPool {
 
 // A set of pools, one per primitive shape.
 export class SegmentSet {
-  constructor(scene, ps1Hook, caps) {
+  constructor(scene, caps) {
     const mat = new THREE.MeshLambertMaterial({ flatShading: true });
-    ps1Hook(mat);
     this.box = new SegPool(scene, boxGeo(), mat, caps.box);
     this.taper = new SegPool(scene, taperGeo(), mat, caps.taper);
     this.cyl = new SegPool(scene, cylGeo(8), mat, caps.cyl);
