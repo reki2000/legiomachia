@@ -245,12 +245,6 @@ export class Command {
       if (reg.floodEvac) continue;
       // escort: the Legion guards the convoy, the Kingdom hunts the wagons
       if (obj && obj.mode === 'escort' && this.escortAI(army, reg, obj)) continue;
-      // retreat: everything but the rearguard marches for the exit
-      if (obj && obj.mode === 'retreat' && army.team === 0 && reg.kind !== K_ENG && reg.type !== 'guard' && !obj.isRearguard(reg)) {
-        const tz = obj.exit.z - 25;
-        if (reg.order !== 'move' || reg.tz > tz + 40) w.orderMove(reg, reg.cx * 0.7, tz);
-        continue;
-      }
       const type = reg.type;
       const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
       if (type === 'engineer' || reg.kind === K_ENG) continue; // handled by stage tasks
@@ -521,7 +515,7 @@ export class Command {
   // ------------------------------------------------------------ engineers
   deployTasks() {
     const w = this.w, st = w.stage;
-    if (st.kind !== 'field' || (w.objective && w.objective.mode === 'retreat')) return;
+    if (st.kind !== 'field') return;
     for (const reg of w.regs) {
       if (reg.type !== 'engineer' || !w.auto[reg.team] && reg.team === 0 && reg.manual) continue;
       // stake the front of the most exposed missile/spear unit

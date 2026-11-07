@@ -7,8 +7,8 @@ export const F_LADDER = 1, F_GATE = 2, F_BRIDGE = 4, F_WALL = 8, F_RAMP = 16, F_
 
 export const STAGE_NAMES = {
   field: '平原の会戦', hills: '丘陵の会戦', forest: '森の会戦', canyon: '峡谷の隘路',
-  river: '渡河戦', ford: '浅瀬の渡河戦', bridge: '落橋の渡河戦', harbor: '港の上陸戦',
-  siege: '攻城戦', camp: '野営地襲撃',
+  bridge: '落橋の渡河戦', harbor: '港の上陸戦',
+  siege: '攻城戦',
   marsh: '沼地の戦い', village: '村落戦', ambush: '峠の伏撃', frozen: '凍河の戦い',
   flood: '決壊洪水', firestorm: '燃える都', landslide: '崩れる峠', naval: '海戦接舷',
   burnforest: '火攻めの森',
@@ -16,8 +16,8 @@ export const STAGE_NAMES = {
 // the families share behaviour (AI, engineering tasks, navigation); the id picks the variant
 export const STAGE_FAMILY = {
   field: 'field', hills: 'field', forest: 'field', canyon: 'field',
-  river: 'river', ford: 'river', bridge: 'river', harbor: 'harbor',
-  siege: 'siege', camp: 'siege',
+  bridge: 'river', harbor: 'harbor',
+  siege: 'siege',
   marsh: 'river', village: 'field', ambush: 'field', frozen: 'river',
   flood: 'river', firestorm: 'siege', landslide: 'field', naval: 'harbor',
   burnforest: 'field',
@@ -414,13 +414,15 @@ function buildForest(st) {
   }
 }
 
-// River family. river: a stone bridge, a wooden bridge and a ford. ford: shallows all along, with a
-// few deep pools. bridge: deep water and a single wooden bridge that can be torn down.
+// River family (the ford and river stages were removed and folded into
+// these). bridge: deep water and a single wooden bridge that can be torn
+// down. frozen / flood: a stone bridge, a wooden bridge and one ford.
+ // marsh keeps the old all-shallows layout with deep pools.
 function buildRiver(st) {
   const S = st.S, id = st.id;
   const X = Math.min(490, 420 * S);
   let half = 13, zr = 40;
-  if (id === 'ford' || id === 'marsh') {
+  if (id === 'marsh') {
     st.river = { amp: 5, freq: 0.012, half: 22, fordX: 0, fordHalf: 1e5, bed: -1.05, fordBed: -1.05 };
     st.pools = [-0.5, -0.18, 0.2, 0.55].map(f => f * X);
     half = 22;
@@ -433,7 +435,7 @@ function buildRiver(st) {
   st.WL = -0.45; st.hasWater = true;
   zr = half + 30;
   st.initRaster(-X, -zr, X, zr);
-  if (id === 'river' || id === 'frozen' || id === 'flood') {
+  if (id === 'frozen' || id === 'flood') {
     st.stoneBridge = st.addBridge(0, 10, false);
     st.woodBridge = st.addBridge(-150 * S, 5, true);
   } else if (id === 'bridge') {
@@ -517,61 +519,42 @@ function buildHarbor(st) {
   }
 }
 
-// Siege family. siege: a walled city. camp: a palisaded army camp, much smaller and lower,
-// with tents instead of houses (the ladders, gate and ram work the same way).
+// Siege family: a walled city (the old palisaded 'camp' stage was folded
+// into this — same ladders, gate and ram).
 function buildSiege(st) {
-  const S = st.S, camp = st.id === 'camp';
-  const L = camp ? Math.round(56 * S / 2) * 2 : Math.round(120 * S / 2) * 2;
-  const depth = camp ? Math.round(72 * S / 2) * 2 : Math.round(110 * S / 2) * 2;
-  const C = st.city = { L, z0: 40, z1: 44, zb: 40 + depth, H: camp ? 3.4 : 7, T: 4, camp };
+  const S = st.S;
+  const L = Math.round(120 * S / 2) * 2;
+  const depth = Math.round(110 * S / 2) * 2;
+  const C = st.city = { L, z0: 40, z1: 44, zb: 40 + depth, H: 7, T: 4, camp: false };
   const H = C.H;
   st.initRaster(-L - 20, C.z0 - 16, L + 20, C.zb + 16);
-  const wall = (x0, z0, x1, z1) => { st.setRect(x0, z0, x1, z1, H, F_WALL); st.structs.push({ type: 'wall', x0, z0, x1, z1, h: H, palisade: camp }); };
+  const wall = (x0, z0, x1, z1) => { st.setRect(x0, z0, x1, z1, H, F_WALL); st.structs.push({ type: 'wall', x0, z0, x1, z1, h: H, palisade: false }); };
   // south wall (facing the attacker), drawn in two pieces so the gate can open a real hole
   st.setRect(-L - 4, C.z0, L + 4, C.z1, H, F_WALL);
-  st.structs.push({ type: 'wall', x0: -L - 4, z0: C.z0, x1: -4, z1: C.z1, h: H, palisade: camp });
-  st.structs.push({ type: 'wall', x0: 4, z0: C.z0, x1: L + 4, z1: C.z1, h: H, palisade: camp });
+  st.structs.push({ type: 'wall', x0: -L - 4, z0: C.z0, x1: -4, z1: C.z1, h: H, palisade: false });
+  st.structs.push({ type: 'wall', x0: 4, z0: C.z0, x1: L + 4, z1: C.z1, h: H, palisade: false });
   wall(-L - 4, C.z0, -L, C.zb + 4);          // west
   wall(L, C.z0, L + 4, C.zb + 4);            // east
   wall(-L - 4, C.zb, L + 4, C.zb + 4);       // north
   // towers along the south wall
   const towerX = [-L, -8, 8, L];
-  if (!camp) {
-    for (let x = -L + 40; x < -12; x += 40) towerX.push(x);
-    for (let x = L - 40; x > 12; x -= 40) towerX.push(x);
-  }
+  for (let x = -L + 40; x < -12; x += 40) towerX.push(x);
+  for (let x = L - 40; x > 12; x -= 40) towerX.push(x);
   for (const tx of towerX) {
     st.setRect(tx - 4, C.z0 - 2, tx + 4, C.z1 + 2, H, F_TOWER);
-    st.structs.push({ type: 'tower', x0: tx - 4, z0: C.z0 - 2, x1: tx + 4, z1: C.z1 + 2, h: H + 4, palisade: camp });
+    st.structs.push({ type: 'tower', x0: tx - 4, z0: C.z0 - 2, x1: tx + 4, z1: C.z1 + 2, h: H + 4, palisade: false });
   }
   // gate (a solid block in the wall until it is broken)
-  const gp = camp ? 1500 : 2600;
+  const gp = 2600;
   const g = { x0: -4, x1: 4, z0: C.z0, z1: C.z1, hp: gp, maxHp: gp, alive: true, cx: 0, cz: C.z0 };
   st.setRect(g.x0, g.z0, g.x1, g.z1, H, F_GATE);
   st.gates.push(g);
   // stair ramps on the inner face of the south wall
-  const ramps = camp ? [-L + 8, L - 24] : [-L + 10, -60 * S, 44 * S, L - 26];
+  const ramps = [-L + 10, -60 * S, 44 * S, L - 26];
   for (const x0 of ramps) {
     const xs = Math.round(x0 / 2) * 2;
     st.setRect(xs, C.z1, xs + 16, C.z1 + 4, (x) => H * clamp((x - xs) / 16, 0, 1), F_RAMP);
     st.structs.push({ type: 'ramp', x0: xs, z0: C.z1, x1: xs + 16, z1: C.z1 + 4, h: H });
-  }
-  if (camp) {
-    // tents in rows, a wide lane behind the gate and a big command tent at the back
-    for (let z = C.z1 + 12; z < C.zb - 16; z += 11) {
-      for (let x = -L + 10; x < L - 12; x += 11) {
-        if (Math.abs(x + 2) < 14 && z < C.z1 + 44) continue;
-        if (Math.abs(x + 2) < 4) continue;
-        if (rand() < 0.2) continue;
-        const w = randRange(4.5, 6), d = randRange(4, 5.5), h = randRange(2.2, 3);
-        const x0 = x + randRange(0, 2), z0 = z + randRange(0, 2);
-        st.setRect(x0, z0, x0 + w, z0 + d, h, F_HOUSE);
-        st.structs.push({ type: 'tent', x0, z0, x1: x0 + w, z1: z0 + d, h });
-      }
-    }
-    st.setRect(-6, C.zb - 18, 6, C.zb - 8, 4.2, F_HOUSE);
-    st.structs.push({ type: 'tent', x0: -6, z0: C.zb - 18, x1: 6, z1: C.zb - 8, h: 4.2, big: true });
-    return;
   }
   // houses
   for (let z = C.z1 + 16; z < C.zb - 12; z += 18) {

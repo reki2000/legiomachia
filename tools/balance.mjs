@@ -6,7 +6,7 @@
 //   seeds   comma list of seeds           (default: 7)
 //   size    S | M | L | XL | XXL          (default: S)
 //   secs    max simulated seconds per run (default: 420)
-//   mode    annihilate | capture | reinforce | retreat | escort
+//   mode    annihilate | capture | reinforce | escort
 //           (default: annihilate; modes that are not valid for a stage fall
 //           back to annihilate inside the Objective constructor)
 //
