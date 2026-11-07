@@ -47,7 +47,7 @@ export class Agent {
     this.skirmish = false; this.riderless = false;
     this.rank = 0; this.captain = false; this.bearer = false; this.wing = null;
     this.basis = makeBasis();
-    this.hits = 0;
+    this.hits = 0; this.kills = 0; // men this soldier has personally killed (battle MVP)
     this.swimming = false; this.climbing = false;
     this.slotBlocked = false; this.slotCheckT = rand(); this.path = null; this.pathI = 0; this.pathT = 0;
     this.job = null; this.carry = null;

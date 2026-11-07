@@ -16,6 +16,7 @@ import { K_INF, K_ENG, TYPES, WEAPONS } from './sim/defs.js';
 import { Sound } from './sound.js';
 import { Weather, WEATHER } from './weather.js';
 import { Objective, MODES } from './sim/objective.js';
+import { Minimap } from './minimap.js';
 
 const $ = id => document.getElementById(id);
 
@@ -27,6 +28,10 @@ let stageKind = params.get('stage') || 'field';
 if (!STAGE_NAMES[stageKind]) stageKind = 'field';
 $('sSize').value = sizeKey;
 $('sStage').value = stageKind;
+const seedVal = Number(params.get('seed')) || 7;
+$('sSeed').value = seedVal;
+const diffVal = ['easy', 'normal', 'hard'].includes(params.get('diff')) ? params.get('diff') : 'normal';
+$('sDiff').value = diffVal;
 $('stageTitle').textContent = '古代会戦シミュレーター ― ' + STAGE_NAMES[stageKind];
 
 // ------------------------------------------------------------------ renderer
@@ -78,11 +83,12 @@ const bodies = new BodyRenderer(dyn, stat, shadows);
 const sound = new Sound();
 
 const world = new World(stage, nav);
+world.difficulty = diffVal;
 world.proj = new Projectiles();
 world.fx = fx;
 world.engineering = new Engineering(world);
 world.command = new Command(world);
-buildScenario(world, stageKind, sizeKey, Number(params.get('seed')) || 7);
+buildScenario(world, stageKind, sizeKey, seedVal);
 world.command.setup();
 world.objective = new Objective(world, MODES[params.get('mode')] ? params.get('mode') : 'annihilate', world.builder);
 $('sMode').value = world.objective.mode;
@@ -95,9 +101,15 @@ world.auto[0] = $('cAuto').checked;
   $('sWeather').value = wk;
   $('sWeather').onchange = e => {
     weather.set(e.target.value);
+    musicCtx();
     const u = new URL(location.href); u.searchParams.set('weather', e.target.value); history.replaceState(null, '', u);
   };
 }
+// tell the music system where and in what weather this battle is fought
+function musicCtx() {
+  if (sound.setMusicContext) sound.setMusicContext({ family: stage.kind, stage: stageKind, weather: weather ? weather.key : $('sWeather').value, seed: seedVal });
+}
+musicCtx();
 world.on((type, data) => onWorldEvent(type, data));
 // big battles step the simulation at 30 Hz
 const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
@@ -117,6 +129,18 @@ function setCam(m) {
   if (world.phase === 'deploy') battleCam = m; // remembered for the start
   else rig.setMode(m, world);
 }
+// minimap: click / drag jumps the free camera to that point of the field
+const minimap = new Minimap($('minimap'), world, () => world.objective, () => rig.target);
+let mmDrag = false;
+function mmJump(e) {
+  const p = minimap.worldFromEvent(e);
+  if (!p) return;
+  rig.setMode('free', world); $('sCam').value = 'free';
+  rig.target.set(p.x, 0, p.z);
+}
+$('minimap').addEventListener('pointerdown', e => { mmDrag = true; mmJump(e); });
+window.addEventListener('pointermove', e => { if (mmDrag) mmJump(e); });
+window.addEventListener('pointerup', () => { mmDrag = false; });
 const selection = new Set();
 let paused = false, timeScale = 1, slowmo = false, deployT = 0;
 const autoStart = params.get('autostart');
@@ -135,24 +159,41 @@ function log(text) {
   setTimeout(() => { d.style.opacity = 0; setTimeout(() => d.remove(), 1200); }, 5000);
 }
 const teamName = t => (t === 0 ? '軍団' : '東方王国');
+// battle timeline for the results screen: { t: elapsed seconds, text }
+const timeline = [];
+let lastIgniteT = -1e9;
+function noteTimeline(text) { timeline.push({ t: world.elapsed(), text }); if (timeline.length > 200) timeline.shift(); }
 function onWorldEvent(type, data) {
   sound.event(type, data, camera);
   switch (type) {
     case 'start': banner('開 戦'); break;
-    case 'gatebreak': banner('城門突破', 3); break;
-    case 'reinforce': log(`${teamName(data.team)}の増援が到着: ${data.names.join('、')}`); banner('増援到着', 2.5); break;
+    case 'gatebreak': banner('城門突破', 3); noteTimeline('城門突破'); break;
+    case 'reinforce': { const s = `${teamName(data.team)}の増援が到着: ${data.names.join('、')}`; log(s); noteTimeline(s); banner('増援到着', 2.5); break; }
     case 'bridge': log(`${data.name}が落とされた`); break;
     case 'pontoon': log('舟橋が架かった'); break;
     case 'ladder': log('城壁に梯子が掛けられた'); break;
     case 'ladderfall': log('梯子が押し倒された'); break;
-    case 'generaldeath': banner(`${teamName(data.team)}の総大将 ${data.crew[0].name} 討死`, 4); break;
-    case 'officerdeath': log(`${teamName(data.team)} ${data.reg.name} ${data.crew[0].name} 討死`); break;
-    case 'captaindeath': if (data.team === 0) log(`${data.reg.name}の隊長 ${data.name} 戦死`); break;
-    case 'standardlost': log(`${data.name}の軍旗が倒れた`); break;
-    case 'standardraised': log(`${data.name}の軍旗が再び掲げられた`); break;
-    case 'rout': log(`${teamName(data.team)} ${data.name} 潰走`); break;
-    case 'rally': log(`${teamName(data.team)} ${data.name} 再集結`); break;
-    case 'reserve': log(`${teamName(data.army.team)} ${data.name}が投入された`); break;
+    case 'generaldeath': { const s = `${teamName(data.team)}の総大将 ${data.crew[0].name} 討死`; banner(s, 4); noteTimeline(s); break; }
+    case 'officerdeath': { const s = `${teamName(data.team)} ${data.reg.name} ${data.crew[0].name} 討死`; log(s); noteTimeline(s); break; }
+    case 'captaindeath': if (data.team === 0) { const s = `${data.reg.name}の隊長 ${data.name} 戦死`; log(s); noteTimeline(s); } break;
+    case 'standardlost': { const s = `${data.name}の軍旗が倒れた`; log(s); noteTimeline(s); break; }
+    case 'standardraised': { const s = `${data.name}の軍旗が再び掲げられた`; log(s); noteTimeline(s); break; }
+    case 'rout': { const s = `${teamName(data.team)} ${data.name} 潰走`; log(s); noteTimeline(s); break; }
+    case 'rally': { const s = `${teamName(data.team)} ${data.name} 再集結`; log(s); noteTimeline(s); break; }
+    case 'reserve': { const s = `${teamName(data.army.team)} ${data.name}が投入された`; log(s); noteTimeline(s); break; }
+    case 'floodwarn': banner('上流の堰が決壊しそうだ', 3); log('上流の堰が決壊しそうだ'); noteTimeline('上流の堰が決壊しそうだ'); break;
+    case 'flood': banner('洪水発生', 4); noteTimeline('洪水発生'); break;
+    case 'quake': banner('地震', 2.5); noteTimeline('地震'); break;
+    case 'rockfall': banner('落石! 隘路が塞がれた', 3.5); noteTimeline('落石! 隘路が塞がれた'); break;
+    case 'rubbleclear': log('瓦礫が除去され隘路が開通'); noteTimeline('瓦礫が除去され隘路が開通'); break;
+    case 'icecrack': log('氷が割れた'); noteTimeline('氷が割れた'); break;
+    case 'galley': banner('敵ガレー船が接舷', 3); noteTimeline('敵ガレー船が接舷'); break;
+    case 'ignite':
+      // timeline only, throttled: a spreading fire would flood the list
+      if (world.elapsed() - lastIgniteT >= 10) { lastIgniteT = world.elapsed(); noteTimeline('火災が発生した'); }
+      break;
+    case 'escortexit': log('輜重車が到着'); noteTimeline('輜重車が到着'); break;
+    case 'escortlost': log('輜重車が失われた'); noteTimeline('輜重車が失われた'); break;
   }
 }
 
@@ -173,15 +214,40 @@ $('cAuto').onchange = e => { world.auto[0] = e.target.checked; };
     try { localStorage.setItem('legiomachia.bgm', e.target.checked ? '1' : '0'); } catch (err) { /* ignore */ }
   };
 }
-const reload = () => {
+// the full parameter set of this battle, as a shareable URL
+function buildShareURL() {
   const u = new URL(location.href);
-  u.searchParams.set('size', $('sSize').value); u.searchParams.set('stage', $('sStage').value); u.searchParams.set('weather', $('sWeather').value); u.searchParams.set('mode', $('sMode').value);
-  location.href = u.toString();
-};
+  u.searchParams.set('size', $('sSize').value);
+  u.searchParams.set('stage', $('sStage').value);
+  u.searchParams.set('weather', $('sWeather').value);
+  u.searchParams.set('mode', $('sMode').value);
+  u.searchParams.set('seed', $('sSeed').value || '7');
+  u.searchParams.set('cam', $('sCam').value);
+  u.searchParams.set('diff', $('sDiff').value);
+  return u.toString();
+}
+const reload = () => { location.href = buildShareURL(); };
 $('sSize').onchange = reload;
 $('sStage').onchange = reload;
 $('sMode').onchange = reload;
+$('sSeed').onchange = reload;
+$('sDiff').onchange = reload;
 $('bReset').onclick = reload;
+$('cPerf').onchange = e => { $('perfHud').hidden = !e.target.checked; };
+$('bCloseResults').onclick = () => { $('results').hidden = true; };
+$('bRematch').onclick = () => { location.href = buildShareURL(); };
+$('bCopy').onclick = async () => {
+  const url = buildShareURL();
+  try { await navigator.clipboard.writeText(url); }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (err) { window.prompt('この戦いのURL', url); }
+    ta.remove();
+  }
+  $('bCopy').textContent = 'コピー済み';
+  setTimeout(() => { $('bCopy').textContent = 'この戦いのURLをコピー'; }, 2000);
+};
 $('help').dataset.full = $('help').innerHTML;
 {
   const toggle = () => {
@@ -196,11 +262,62 @@ document.querySelectorAll('#selPanel button[data-o]').forEach(b => { b.onclick =
 document.querySelectorAll('#selPanel button[data-f]').forEach(b => { b.onclick = () => { for (const r of mySel()) world.issue(r, 'formation', b.dataset.f); }; });
 document.querySelectorAll('#selPanel button[data-t]').forEach(b => { b.onclick = () => engineerTask(b.dataset.t); });
 
+// strength snapshots taken when the battle opens, for the results screen
+let startCounts = null, startRegInitial = null;
 function startBattle() {
   sound.unlock();
   if (world.phase === 'deploy' && battleCam !== 'overview') rig.setMode(battleCam, world);
+  if (!startCounts) { startCounts = world.counts(); startRegInitial = world.regs.map(r => r.initial); }
   world.start();
   $('bStart').disabled = true;
+}
+
+const fmtTime = s => { s = Math.max(0, Math.floor(s)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const agentName = a => a.name || (a.crew && a.crew[0] && a.crew[0].name) || '―';
+// fill and show the battle-end panel (#results)
+function showResults(res) {
+  if (sound.gameOver) sound.gameOver(res.winner === 0);
+  const c = world.counts();
+  const obj = world.objective;
+  $('resTitle').textContent = res.text;
+  let meta = `勝者: ${teamName(res.winner)} ・ 経過 ${fmtTime(world.elapsed())} ・ シード ${seedVal} ・ 難易度 ${$('sDiff').selectedOptions[0].textContent}`;
+  if (obj) {
+    if (obj.escaped) meta += ` ・ 離脱 ${obj.escaped}名`;
+    const wg = obj.wagons;
+    if (wg && !Array.isArray(wg) && (wg.arrived || wg.lost)) meta += ` ・ 輜重車 到着 ${wg.arrived || 0} / 喪失 ${wg.lost || 0}`;
+    else if (obj.wagonEscaped || obj.wagonLost) meta += ` ・ 輜重車 到着 ${obj.wagonEscaped || 0} / 喪失 ${obj.wagonLost || 0}`;
+  }
+  $('resMeta').textContent = meta;
+  const sc = startCounts || c;
+  $('resArmies').innerHTML = [0, 1].map(t =>
+    `<div><span class="${t === 0 ? 'red' : 'blue'}">■ ${teamName(t)}</span> 開始時 ${sc[t]} ・ 残存 ${c[t]} ・ 損失 ${Math.max(0, sc[t] - c[t])}</div>`).join('')
+    + '<div class="small">※増援・輜重車など途中から加わった兵は開始時に含まれません</div>';
+  // MVP: most kills among all agents, the dead included; if nobody killed, the
+  // strongest front-rank survivor instead
+  let mvp = null, mk = -1;
+  for (const a of world.agents) { const k = a.kills || 0; if (k > mk) { mk = k; mvp = a; } }
+  if (mvp && mk > 0) {
+    $('resMvp').textContent = `殊勲者: ${agentName(mvp)} (${mvp.reg ? mvp.reg.name : ''}) ― ${mk}名を討ち取り${mvp.state === 3 ? '、戦死' : ''}`;
+  } else {
+    let best = null, bs = -1;
+    for (const a of world.agents) {
+      if (!isActive(a) || !a.stats || !a.reg || !(a.slot < a.reg.cols)) continue;
+      const s = a.stats.str + a.stats.def + a.stats.vit;
+      if (s > bs) { bs = s; best = a; }
+    }
+    $('resMvp').textContent = best ? `殊勲者: ${agentName(best)} (${best.reg.name}) ― 前列で戦い抜いた強兵` : '';
+  }
+  let rh = '<table><tr><th>部隊</th><th>軍</th><th>兵種</th><th class="n">開始時</th><th class="n">残存</th><th>状態</th></tr>';
+  for (const r of world.regs) {
+    const init = startRegInitial ? (startRegInitial[r.id] ?? r.initial) : r.initial;
+    const state = r.alive === 0 ? '全滅' : r.order === 'rout' ? '潰走' : '健在';
+    rh += `<tr><td>${r.name}</td><td>${teamName(r.team)}</td><td>${TYPES[r.type].name}</td><td class="n">${init}</td><td class="n">${r.alive}</td><td>${state}</td></tr>`;
+  }
+  $('resRegs').innerHTML = rh + '</table>';
+  let th = '<table>';
+  for (const e of timeline.slice(-40)) th += `<tr><td>${fmtTime(e.t)}</td><td>${e.text}</td></tr>`;
+  $('resTimeline').innerHTML = th + '</table>';
+  $('results').hidden = false;
 }
 function togglePause() { paused = !paused; $('bPause').textContent = paused ? '再開 (Space)' : '一時停止 (Space)'; }
 
@@ -288,6 +405,23 @@ function selectRegs(regs, add = false) {
 
 let dragStart = null, rDown = null;
 const dragBox = $('dragBox');
+// touch tap (short, nearly still single touch) acts as a left-click selection;
+// the camera rig's touch handlers preventDefault, so no synthetic mouse events follow
+let tapInfo = null;
+renderer.domElement.addEventListener('touchstart', e => {
+  tapInfo = e.touches.length === 1 ? { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY, t: performance.now() } : null;
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', e => {
+  if (!tapInfo) return;
+  const t = e.changedTouches[0];
+  const moved = Math.hypot(t.clientX - tapInfo.x, t.clientY - tapInfo.y);
+  const dt = performance.now() - tapInfo.t;
+  tapInfo = null;
+  if (moved >= 10 || dt >= 350) return;
+  e.preventDefault();
+  const a = pickAgent(t.clientX, t.clientY, 40, null);
+  if (a) { selectRegs([a.reg]); soldier = a; }
+}, { passive: false });
 renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', e => {
   sound.unlock();
@@ -389,6 +523,11 @@ function engineerTask(t) {
       const b = stage.bridges.filter(b => b.alive && b.wood).sort((a, c) => Math.abs(a.cx - r.cx) - Math.abs(c.cx - r.cx))[0];
       if (b) world.issue(r, 'task', { type: 'demolish', bridge: b });
     }
+    else if (t === 'ignite') {
+      const f = Math.atan2(world.armies[0].fwdX, world.armies[0].fwdZ);
+      world.issue(r, 'task', { type: 'ignite', x: r.cx + Math.sin(f) * 20, z: r.cz + Math.cos(f) * 20 });
+    }
+    else if (t === 'clear') world.issue(r, 'task', { type: 'clear' });
   }
 }
 
@@ -419,7 +558,7 @@ function updateSelPanel() {
   if (regs.length === 1) {
     const r = regs[0];
     const wing = r.wing ? r.wing.name : '';
-    const task = r.task ? ` 作業:${{ stakes: '杭', ladders: '梯子', demolish: '橋破壊', pontoon: '舟橋' }[r.task.type] || ''}` : '';
+    const task = r.task ? ` 作業:${{ stakes: '杭', ladders: '梯子', demolish: '橋破壊', pontoon: '舟橋', ignite: '放火', clear: '瓦礫除去' }[r.task.type] || ''}` : '';
     $('selName').textContent = `${r.team === 0 ? '【自軍】' : '【敵軍】'}${r.name}  (${wing})`;
     $('selInfo').textContent = `${TYPES[r.type].name}  ${r.alive}/${r.initial}  士気 ${(r.morale * 100 | 0)}  疲労 ${((1 - r.stamina) * 100 | 0)}  命令: ${ORDER_JP[r.order] || r.order}${r.charging ? '(交戦)' : ''}${r.pendingOrder ? ' ←伝令中' : ''}${task}  ${r.manual ? '手動' : 'AI'}`;
   } else {
@@ -501,6 +640,13 @@ window.addEventListener('resize', () => {
 });
 
 let last = performance.now(), fpsT = 0, fpsN = 0, fps = 0, uiT = 0, simMs = 0, renMs = 0, simAcc = 0;
+// adaptive quality: Q0 best .. Q3 lightest; stepped by the FPS EMA every 2.5 s
+let quality = 0, fpsEMA = 60, qualT = 0, goodEvals = 0, mmT = 0;
+const QUAL_PR = [1.5, 1.25, 1.0, 0.85], QUAL_SKIP = [1, 1, 2, 3];
+function applyQuality() {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUAL_PR[quality]));
+  bodies.poseSkip = QUAL_SKIP[quality];
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const rdt = Math.max(0, Math.min(0.05, (now - last) / 1000));
@@ -526,6 +672,14 @@ function frame(now) {
   }
   const t1 = performance.now();
   rig.update(rdt, world);
+  // the water surface follows the stage's live water level (flood stage raises it)
+  const waterMesh = terrain.group.userData.water;
+  if (waterMesh) waterMesh.position.y = stage.WL;
+  // earthquake shake: render-only jitter on top of the rig's camera position
+  if (world.shake > 0) {
+    camera.position.x += (Math.random() - 0.5) * world.shake * 1.2;
+    camera.position.y += (Math.random() - 0.5) * world.shake * 0.8;
+  }
   weather.fogScaleTarget = overviewFog();
   camera.updateMatrixWorld();
   bodies.emit(world, camera, selection, stageR);
@@ -540,6 +694,17 @@ function frame(now) {
   if (bannerT > 0) { bannerT -= rdt; if (bannerT <= 0) bannerEl.style.opacity = 0; }
   fpsN++; fpsT += rdt;
   if (fpsT > 0.5) { fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
+  // adaptive quality evaluation
+  if (rdt > 0) fpsEMA = fpsEMA * 0.95 + (1 / rdt) * 0.05;
+  qualT += rdt;
+  if (qualT >= 2.5) {
+    qualT = 0;
+    if (fpsEMA < 42 && quality < 3) { quality++; goodEvals = 0; applyQuality(); }
+    else if (fpsEMA > 57) { if (++goodEvals >= 3 && quality > 0) { quality--; goodEvals = 0; applyQuality(); } }
+    else goodEvals = 0;
+  }
+  mmT += rdt;
+  if (mmT >= 0.25) { mmT = 0; minimap.draw(); }
   uiT -= rdt;
   if (uiT <= 0) {
     uiT = 0.3;
@@ -549,9 +714,12 @@ function frame(now) {
     if (selection.size) updateSelPanel();
     renderTree(); renderSoldier();
     $('objective').textContent = world.objective.status();
+    if (!$('perfHud').hidden) {
+      $('perfHud').textContent = `FPS ${fps.toFixed(0)} (EMA ${fpsEMA.toFixed(0)})\nsim ${simMs.toFixed(1)}ms ・ draw ${renMs.toFixed(1)}ms\n生存 ${c[0] + c[1]} ・ 画質 Q${quality} ・ pixelRatio ${renderer.getPixelRatio().toFixed(2)}`;
+    }
     if (world.phase === 'battle' && !world.ended) {
       const res = world.objective.check(c);
-      if (res) { world.ended = true; banner(res.text, 8); }
+      if (res) { world.ended = true; banner(res.text, 8); showResults(res); }
     }
   }
 }

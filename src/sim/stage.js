@@ -3,18 +3,24 @@
 // are plateaus, ladders are steep ramps and a bridge is a causeway over water.
 import { smoothstep, clamp, rand, setSeed, randRange } from '../util.js';
 
-export const F_LADDER = 1, F_GATE = 2, F_BRIDGE = 4, F_WALL = 8, F_RAMP = 16, F_PONTOON = 32, F_HOUSE = 64, F_TOWER = 128;
+export const F_LADDER = 1, F_GATE = 2, F_BRIDGE = 4, F_WALL = 8, F_RAMP = 16, F_PONTOON = 32, F_HOUSE = 64, F_TOWER = 128, F_ICE = 256;
 
 export const STAGE_NAMES = {
   field: '平原の会戦', hills: '丘陵の会戦', forest: '森の会戦', canyon: '峡谷の隘路',
   river: '渡河戦', ford: '浅瀬の渡河戦', bridge: '落橋の渡河戦', harbor: '港の上陸戦',
   siege: '攻城戦', camp: '野営地襲撃',
+  marsh: '沼地の戦い', village: '村落戦', ambush: '峠の伏撃', frozen: '凍河の戦い',
+  flood: '決壊洪水', firestorm: '燃える都', landslide: '崩れる峠', naval: '海戦接舷',
+  burnforest: '火攻めの森',
 };
 // the families share behaviour (AI, engineering tasks, navigation); the id picks the variant
 export const STAGE_FAMILY = {
   field: 'field', hills: 'field', forest: 'field', canyon: 'field',
   river: 'river', ford: 'river', bridge: 'river', harbor: 'harbor',
   siege: 'siege', camp: 'siege',
+  marsh: 'river', village: 'field', ambush: 'field', frozen: 'river',
+  flood: 'river', firestorm: 'siege', landslide: 'field', naval: 'harbor',
+  burnforest: 'field',
 };
 
 export class Stage {
@@ -35,6 +41,12 @@ export class Stage {
     this.structs = []; this.gates = []; this.bridges = []; this.ladders = []; this.pontoons = []; this.stakes = [];
     this.stakeGrid = new Map();
     this.river = null; this.city = null; this.harbor = null;
+    this.canyon = false;        // sheer canyon walls (canyon / ambush / landslide)
+    this.mudAreas = null;       // [{x, z, r, depth}] marsh: deep mud patches
+    this.ice = false;           // frozen: the river surface is an ice sheet (F_ICE cells)
+    this.villageSquare = null;  // village: the capture point
+    this.galleys = null;        // naval: Kingdom war galleys [{x, z, heading, berthX}]
+    this.rubble = null;         // landslide: the rockfall block, cleared by engineers
     this.version = 0;
     this.listeners = [];
   }
@@ -86,7 +98,7 @@ export class Stage {
         h = h * 0.4 + (bed - h * 0.4) * ch;
       } else h *= 0.4 + 0.6 * smoothstep(R.half + 7, R.half + 60, d);
     }
-    if (this.id === 'canyon') {
+    if (this.canyon) {
       // sheer rock walls close in to a narrow neck in the middle
       const d = Math.abs(x) - this.canyonHalf(z);
       h += smoothstep(0, 9, d) * (24 + 5 * Math.sin(z * 0.05 + x * 0.03));
@@ -150,7 +162,7 @@ export class Stage {
     this.rx0 = x0; this.rz0 = z0;
     this.rw = Math.ceil((x1 - x0) / this.res); this.rh = Math.ceil((z1 - z0) / this.res);
     this.floor = new Float32Array(this.rw * this.rh).fill(NaN);
-    this.flags = new Uint8Array(this.rw * this.rh);
+    this.flags = new Uint16Array(this.rw * this.rh); // 16-bit: F_ICE is bit 256
   }
   idx(x, z) {
     if (!this.floor) return -1;
@@ -185,6 +197,17 @@ export class Stage {
     for (const l of this.listeners) l(x0, z0, x1, z1);
   }
   waterDepth(x, z) { return this.WL - this.floorAt(x, z); }
+  // marsh mud: 0 = firm ground, up to ~1 in the middle of a patch
+  mudAt(x, z) {
+    if (!this.mudAreas) return 0;
+    let d = 0;
+    for (const m of this.mudAreas) {
+      const dd = Math.hypot(x - m.x, z - m.z);
+      if (dd < m.r) d = Math.max(d, m.depth * (1 - dd / m.r * 0.45));
+    }
+    return d;
+  }
+  iceAt(x, z) { return this.ice && (this.flagAt(x, z) & F_ICE) !== 0; }
 
   // ---------------------------------------------------------------- stakes (hazards)
   addStake(x, z, heading) {
@@ -290,10 +313,76 @@ export function buildStage(id, scale) {
   else if (st.kind === 'harbor') buildHarbor(st);
   else if (st.kind === 'siege') buildSiege(st);
   if (id === 'hills') st.hilly = true;
-  if (id === 'canyon') st.needsNav = true;
+  if (id === 'canyon' || id === 'ambush' || id === 'landslide') { st.needsNav = true; st.canyon = true; st.initRaster(-90, -300, 90, 300); } // raster so the landslide rubble (and any pass works) can block the neck
+  if (id === 'marsh') buildMarsh(st);
+  if (id === 'frozen') buildIce(st);
+  if (id === 'village') buildVillage(st);
+  if (id === 'naval') {
+    const H = st.harbor;
+    st.galleys = [
+      { x: -120 * st.S, z: H.shore - 105, heading: 0, berthX: -105 * st.S, oar: 0 },
+      { x: 130 * st.S, z: H.shore - 120, heading: 0, berthX: 115 * st.S, oar: 2 },
+    ];
+  }
   st.bakeTerrain();
-  if (id === 'forest') buildForest(st);
+  if (id === 'forest' || id === 'burnforest') buildForest(st);
   return st;
+}
+
+// Marsh: a ford river (built by buildRiver with ford parameters) plus broad patches of
+// deep mud on both banks and in the shallows. Mud is a movement effect only (stage.mudAt,
+// applied in World.maxSpeed / moveMount): it does not change the height field.
+function buildMarsh(st) {
+  const S = st.S;
+  st.mudAreas = [];
+  const spots = [[-120, -34], [-40, -30], [50, -36], [130, -28], [-90, 34], [0, 30], [90, 38], [-170, 0], [170, -4], [-20, -58], [60, 60], [-60, -64]];
+  for (const [x, z] of spots) st.mudAreas.push({ x: x * S, z, r: randRange(13, 25), depth: randRange(0.65, 1) });
+}
+
+// Frozen river: an ice sheet over the whole channel (the bridges from buildRiver stand
+// above it). The sheet is a raster floor at WL - 0.08 flagged F_ICE; dynamics can crack it.
+function buildIce(st) {
+  st.ice = true;
+  const R = st.river;
+  for (let iz = 0; iz < st.rh; iz++) {
+    for (let ix = 0; ix < st.rw; ix++) {
+      const x = st.rx0 + (ix + 0.5) * st.res, z = st.rz0 + (iz + 0.5) * st.res;
+      if (Math.abs(z - st.riverZ(x)) > R.half + 2) continue;
+      let onBridge = false;
+      for (const b of st.bridges) if (x > b.x0 - 1 && x < b.x1 + 1 && z > b.z0 && z < b.z1) { onBridge = true; break; }
+      if (onBridge) continue;
+      const i = iz * st.rw + ix;
+      st.floor[i] = st.WL - 0.08; st.flags[i] = F_ICE;
+    }
+  }
+}
+
+// Village: houses and fences round a square, on field-family ground. Houses are raster
+// blocks (F_HOUSE) exactly like the forest's trees and the city's houses; fences are low
+// blocks (1 m: over the infantry step limit, so they block, but they stop no arrows high).
+function buildVillage(st) {
+  st.needsNav = true;
+  st.initRaster(-200, -160, 200, 180);
+  const sq = st.villageSquare = { x: 0, z: 10, r: 24 };
+  const block = (x0, z0, x1, z1, h, type = 'house') => {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, top = st.terrain(cx, cz) + h;
+    st.setRect(x0, z0, x1, z1, top, F_HOUSE);
+    st.structs.push({ type, x0, z0, x1, z1, h: top, roof: rand() });
+  };
+  for (let z = -104; z < 128; z += 17) {
+    for (let x = -136; x < 128; x += 17) {
+      const w = randRange(8, 11.5), d = randRange(8, 11), x0 = x + randRange(0, 2.5), z0 = z + randRange(0, 2.5);
+      if (Math.abs(x0 + w / 2) < 8 + w / 2) continue;                       // main street (north-south)
+      if (Math.abs(z0 + d / 2 - 52) < 5 + d / 2) continue;                 // cross street
+      if (Math.hypot(Math.max(0, Math.abs(x0 + w / 2 - sq.x) - w / 2), Math.max(0, Math.abs(z0 + d / 2 - sq.z) - d / 2)) < sq.r + 2) continue;
+      if (rand() < 0.22) continue;
+      block(x0, z0, x0 + w, z0 + d, randRange(3.4, 5.4));
+    }
+  }
+  // fences along the south edge and the square: low walls men must go round
+  for (const [x0, z0, x1, z1] of [[-70, -118, -18, -117], [20, -118, 74, -117], [-52, 96, -14, 97], [16, 96, 58, 97], [-88, -40, -87, 8], [88, -30, 89, 18]]) {
+    block(x0, z0, x1, z1, 1.0, 'fence');
+  }
 }
 
 // Woods across the middle of the field. Every tree is a 2 m block of the raster (the size of a
@@ -331,7 +420,7 @@ function buildRiver(st) {
   const S = st.S, id = st.id;
   const X = Math.min(490, 420 * S);
   let half = 13, zr = 40;
-  if (id === 'ford') {
+  if (id === 'ford' || id === 'marsh') {
     st.river = { amp: 5, freq: 0.012, half: 22, fordX: 0, fordHalf: 1e5, bed: -1.05, fordBed: -1.05 };
     st.pools = [-0.5, -0.18, 0.2, 0.55].map(f => f * X);
     half = 22;
@@ -344,7 +433,7 @@ function buildRiver(st) {
   st.WL = -0.45; st.hasWater = true;
   zr = half + 30;
   st.initRaster(-X, -zr, X, zr);
-  if (id === 'river') {
+  if (id === 'river' || id === 'frozen' || id === 'flood') {
     st.stoneBridge = st.addBridge(0, 10, false);
     st.woodBridge = st.addBridge(-150 * S, 5, true);
   } else if (id === 'bridge') {

@@ -2,6 +2,8 @@
 import { Agent, Regiment } from './sim/world.js';
 import { Army, Wing } from './sim/command.js';
 import { Landing } from './sim/landing.js';
+import { FireSystem } from './sim/fire.js';
+import { setupDynamics } from './sim/dynamics.js';
 import { randRange, setSeed } from './util.js';
 import { W_BANNER, SH_NONE } from './anim/human.js';
 import { K_INF, K_CAV, commanderLook, TEAM_FLAG } from './sim/defs.js';
@@ -10,7 +12,7 @@ const SPACING = {
   sword: [1.35, 1.55], axe: [1.45, 1.65], mace: [1.45, 1.65], spear: [1.3, 1.5], pike: [1.3, 1.45],
   jav: [1.8, 1.9], sling: [1.8, 1.9], archer: [1.6, 1.7], xbow: [1.6, 1.7], engineer: [1.7, 1.8],
   cav: [3.2, 5.2], hcav: [3.6, 5.6], cata: [3.0, 5.0], camel: [3.4, 5.4], guard: [3.0, 4.8], officer: [3, 4], general: [3, 4],
-  ele: [12, 10], chr: [7, 9], dog: [2.0, 2.2], ram: [8, 10], onager: [9, 9],
+  ele: [12, 10], chr: [7, 9], dog: [2.0, 2.2], ram: [8, 10], onager: [9, 9], wagon: [8, 9],
 };
 
 export const SIZES = { S: 0.4, M: 1, L: 2.2, XL: 5, XXL: 10 };
@@ -92,19 +94,69 @@ class Builder {
 
 export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   setSeed(seed);
+  world.seed = seed;
   const m = SIZES[sizeKey] || 1;
   const sq = Math.sqrt(m);
   const b = new Builder(world, sq, world.stage.S);
   const st = world.stage;
   world.builder = b;
   if (st.kind === 'river') river(b, st);
-  else if (st.kind === 'harbor') harbor(b, st);
+  else if (st.kind === 'harbor') { harbor(b, st); if (st.id === 'naval') navalMarines(b, st); }
   else if (st.id === 'camp') camp(b, st);
   else if (st.kind === 'siege') siege(b, st);
-  else if (st.id === 'canyon') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
+  else if (st.id === 'ambush') ambush(b, st);
+  else if (st.id === 'canyon' || st.id === 'landslide') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
   else if (st.id === 'hills') field(b, { hills: true });
   else field(b, {});
+  // fire and dramatic stage dynamics attach to the finished deployment
+  if (st.id === 'burnforest' || st.id === 'firestorm') world.fire = new FireSystem(world);
+  setupDynamics(world);
   return world;
+}
+
+// ------------------------------------------------------------------ ambush in the pass
+// The Legion marches through the canyon in a long column; the Kingdom waits on the
+// slopes above the neck and springs down on it.
+function ambush(b, st) {
+  b.cm = 0.5;
+  b.armies[1].posture = 'defend';
+  const half = z => st.canyonHalf(z);
+  // Red: a marching column along the pass, head at the neck
+  b.reg(0, 'jav', 12, 3, 0, -18, '先行投槍兵', { wing: '中央', q: 0.45 });
+  b.reg(0, 'sword', 14, 6, 0, -52, '第1大隊', { wing: '中央', q: 0.6 });
+  b.reg(0, 'sword', 14, 6, 0, -88, '第2大隊', { wing: '中央', q: 0.6 });
+  b.reg(0, 'archer', 16, 3, 0, -116, '弓兵隊', { wing: '中央' });
+  b.reg(0, 'spear', 14, 6, 0, -146, '槍兵隊', { wing: '予備', role: 'reserve', q: 0.7 });
+  b.reg(0, 'cav', 6, 2, 0, -176, '騎兵', { wing: '予備', role: 'reserve' });
+  b.reg(0, 'engineer', 8, 2, 6, -196, '工兵隊', { wing: '予備', role: 'reserve' });
+  b.officer(0, '中央', 0, -108, '中央将');
+  b.officer(0, '予備', 0, -186, '予備将');
+  b.general(0, 0, -214, 5);
+  // Blue: missile troops on both slopes, heavy foot ready to drop into the neck
+  for (const sd of [-1, 1]) {
+    const sx = sd * (half(-30) + 5);
+    b.reg(1, 'archer', 16, 3, sx, -30, sd < 0 ? '崖上弓兵 西' : '崖上弓兵 東', { wing: sd < 0 ? '左翼' : '右翼', q: 0.55 });
+    b.reg(1, 'sling', 12, 3, sd * (half(6) + 5), 6, sd < 0 ? '崖上投石 西' : '崖上投石 東', { wing: sd < 0 ? '左翼' : '右翼' });
+    b.reg(1, 'jav', 12, 3, sd * (half(34) + 4), 34, sd < 0 ? '崖上投槍 西' : '崖上投槍 東', { wing: sd < 0 ? '左翼' : '右翼', q: 0.45 });
+    b.reg(1, 'axe', 12, 5, sd * (half(0) + 3), -2, sd < 0 ? '伏兵斧兵 西' : '伏兵斧兵 東', { wing: sd < 0 ? '左翼' : '右翼', q: 0.5 });
+  }
+  b.reg(1, 'spear', 14, 6, 0, 66, '出口槍兵', { wing: '中央', q: 0.6 });
+  b.reg(1, 'hcav', 8, 3, -30, 96, '弓騎兵', { wing: '左翼' });
+  b.reg(1, 'cata', 8, 3, 34, 100, '重装騎兵', { wing: '右翼', q: 0.8 });
+  b.officer(1, '左翼', -half(20) - 4, 20, '左翼将');
+  b.officer(1, '右翼', half(20) + 4, 20, '右翼将');
+  b.officer(1, '中央', 0, 84, '中央将');
+  b.general(1, 0, 122, 5);
+}
+
+// Kingdom marines for the naval stage: placed in the sea, then taken aboard the
+// galleys by Dynamics.setupGalleys (they are not in world.agents until they board).
+function navalMarines(b, st) {
+  const H = st.harbor;
+  const m1 = b.reg(1, 'sword', 12, 5, -120 * st.S, H.shore - 105, 'ガレー海兵 I', { wing: '海兵', q: 0.6 });
+  m1.galley = 0;
+  const m2 = b.reg(1, 'archer', 14, 3, 130 * st.S, H.shore - 120, 'ガレー海兵 II', { wing: '海兵' });
+  m2.galley = 1;
 }
 
 // ------------------------------------------------------------------ plains
@@ -163,7 +215,7 @@ function field(b, o = {}) {
 function river(b, st) {
   const S = st.S, id = st.id;
   // where the crossings are decides how tightly the armies bunch: one bridge draws everybody to it
-  const xm = { river: 1, ford: 0.85, bridge: 0.4 }[id] || 1;
+  const xm = { river: 1, ford: 0.85, bridge: 0.4, marsh: 0.85 }[id] || 1;
   const X = v => v * S * xm;
   b.armies[1].posture = 'defend';
   const wb = -150 * S * xm, fd = 150 * S * xm;
@@ -209,6 +261,7 @@ function river(b, st) {
   const extra = id === 'bridge' ? [-60] : [];
   for (const x of extra) b.reg(0, 'engineer', 10, 2, X(x), -76, '架橋工兵', { wing: '予備' });
   const RENAME = {
+    marsh: { '橋頭ファランクス': '中央ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊', '架橋工兵': '工兵隊' },
     ford: { '橋頭ファランクス': '中央ファランクス', '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊', '架橋工兵': '工兵隊' },
     bridge: { '木橋守備隊': '左岸守備隊', '浅瀬守備隊': '右岸守備隊' },
   }[id];

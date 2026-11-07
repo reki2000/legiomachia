@@ -4,30 +4,34 @@
 //   reinforce - fresh regiments arrive from the edges of the map while the battle rages
 //   retreat   - the Legion must get enough of its men off the field before time runs out
 import { K_INF, K_ENG } from './defs.js';
-import { S_ALIVE, S_GONE, isActive } from './agent.js';
+import { S_ALIVE, S_DEAD, S_GONE, isActive } from './agent.js';
 
-export const MODES = { annihilate: '殲滅戦', capture: '拠点占領', reinforce: '増援', retreat: '離脱戦' };
+export const MODES = { annihilate: '殲滅戦', capture: '拠点占領', reinforce: '増援', retreat: '離脱戦', escort: '輜重護衛' };
 
 const TEAMS = ['軍団', '東方王国'];
 const CAPTURE_SECS = 45;        // time to take an undefended point
 const HOLD_LIMIT = 540;         // defenders win by holding out this long (asymmetric stages)
 const RETREAT_NEED = 0.5;       // share of the Legion that must get away
 const RETREAT_LIMIT = 360;
+const ESCORT_LIMIT = 480;       // escort: defenders win by holding the convoy this long
+const ESCORT_N = 5;             // wagons in the convoy
 
 export class Objective {
   constructor(world, mode, builder) {
     const st = world.stage;
     this.w = world; this.b = builder; this.st = st;
-    // retreating only makes sense on open ground, where both armies can run
-    this.mode = mode === 'retreat' && st.kind !== 'field' ? 'annihilate' : (MODES[mode] ? mode : 'annihilate');
+    // retreating / escorting only make sense on open ground, where both armies can run
+    this.mode = (mode === 'retreat' || mode === 'escort') && st.kind !== 'field' ? 'annihilate' : (MODES[mode] ? mode : 'annihilate');
     this.point = null; this.exit = null; this.waves = [];
     this.meter = 0;           // capture progress: +1 = the Legion holds the point, -1 = the Kingdom
     this.symmetric = st.kind === 'field';
     this.escaped = 0; this.initial0 = 0;
+    this.wagons = []; this.wagonTotal = 0; this.wagonEscaped = 0; this.wagonLost = 0; this.wagonExit = null;
     this.result = null;
     if (this.mode === 'capture') this.setupCapture();
     else if (this.mode === 'reinforce') this.setupWaves();
     else if (this.mode === 'retreat') this.setupRetreat();
+    else if (this.mode === 'escort') this.setupEscort();
   }
 
   elapsed() { return this.w.time - (this.w.battleT0 || 0); }
@@ -36,7 +40,8 @@ export class Objective {
   setupCapture() {
     const st = this.st;
     let x = 0, z = 0, r = 30;
-    if (st.kind === 'river') { x = 0; z = st.riverZ(0) + st.river.half + 28; r = 28; }
+    if (st.id === 'village' && st.villageSquare) ({ x, z, r } = st.villageSquare);
+    else if (st.kind === 'river') { x = 0; z = st.riverZ(0) + st.river.half + 28; r = 28; }
     else if (st.kind === 'harbor') ({ x, z, r } = st.harbor.square);
     else if (st.kind === 'siege') { const C = st.city; z = (C.z1 + C.zb) / 2; r = C.camp ? 18 : 24; }
     else if (st.id === 'forest') x = st.forestLaneX || 0;
@@ -122,6 +127,45 @@ export class Objective {
     }
   }
 
+  // ------------------------------------------------------------ escort
+  setupEscort() {
+    const st = this.st, b = this.b, w = this.w;
+    const canyon = !!st.canyon;
+    this.exitDef = canyon ? { axis: 'z', at: 250 } : { axis: 'x', at: 255 };
+    this.wagonExit = this.exitDef;
+    this.exit = null;
+    this.wagons = [];
+    for (let i = 0; i < ESCORT_N; i++) {
+      let x, z, facing, goal;
+      if (canyon) { x = 0; z = -230 - i * 13; facing = 0; goal = { x: 0, z: 255 }; }
+      else { x = -240; z = -30 + i * 14; facing = Math.PI / 2; goal = { x: 260, z }; }
+      const reg = b.reg(0, 'wagon', 1, 1, x, z, `輜重車 ${i + 1}`, { wing: '輜重', fixed: true, facing });
+      const a = reg.agents[0];
+      if (a) { a.escortGoal = goal; this.wagons.push(a); }
+    }
+    this.wagonTotal = this.wagons.length;
+    this.wagonEscaped = 0; this.wagonLost = 0;
+    if (w.command) w.command.setup();
+  }
+  updateEscort() {
+    const ex = this.exitDef || this.wagonExit;
+    if (!ex) return;
+    for (const a of this.wagons) {
+      if (!a || a.escortCounted) continue;
+      if (a.state === S_DEAD) {
+        a.escortCounted = true; this.wagonLost++;
+        this.w.emit('escortlost', { team: 0 });
+        continue;
+      }
+      if (a.state !== S_ALIVE) continue;
+      const past = ex.axis === 'x' ? a.x > ex.at : a.z > ex.at;
+      if (past) {
+        a.state = S_GONE; a.escortCounted = true; this.wagonEscaped++;
+        this.w.emit('escortexit', { team: 0 });
+      }
+    }
+  }
+
   // ------------------------------------------------------------ loop
   update(dt) {
     if (this.w.phase !== 'battle' || this.result) return;
@@ -131,6 +175,7 @@ export class Objective {
     if (this.mode === 'capture') this.updateCapture(dt);
     else if (this.mode === 'reinforce') this.updateWaves();
     else if (this.mode === 'retreat') this.updateRetreat();
+    else if (this.mode === 'escort') this.updateEscort();
   }
 
   // c = [Legion men, Kingdom men]; returns { winner, text } once the battle is decided
@@ -147,6 +192,12 @@ export class Objective {
       if (this.escaped >= need) return win(0, `${this.escaped}名が離脱`);
       if (this.escaped + c[0] < need) return win(1, '退路を断った');
       if (this.elapsed() > RETREAT_LIMIT) return win(1, '離脱を阻んだ');
+    }
+    if (this.mode === 'escort' && this.wagonTotal) {
+      const need = Math.ceil(this.wagonTotal / 2);
+      if (this.wagonEscaped >= need) return win(0, `${this.wagonEscaped}台が到着`);
+      if (this.wagonLost >= need) return win(1, '輜重を壊滅');
+      if (this.elapsed() > ESCORT_LIMIT) return win(1, '輜重を阻んだ');
     }
     if (c[1] === 0) return win(0, '');
     if (c[0] === 0 && !(this.mode === 'retreat' && this.escaped > 0)) return win(1, '');
@@ -168,6 +219,10 @@ export class Objective {
     if (this.mode === 'retreat') {
       const need = Math.ceil((this.initial0 || 1) * RETREAT_NEED);
       return `離脱 ${this.escaped}/${need} ・ 残り ${mmss(RETREAT_LIMIT - t)}`;
+    }
+    if (this.mode === 'escort') {
+      const need = Math.ceil((this.wagonTotal || ESCORT_N) / 2);
+      return `輜重 到着 ${this.wagonEscaped}/${need} ・ 喪失 ${this.wagonLost} ・ 残り ${mmss(ESCORT_LIMIT - t)}`;
     }
     return '';
   }

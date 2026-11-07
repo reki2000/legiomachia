@@ -52,6 +52,11 @@ export class Engineering {
       if (!st.river) return;
       const p = st.startPontoon(spec.x, reg.team);
       task = { type: 'pontoon', reg, pont: p };
+    } else if (spec.type === 'ignite') {
+      task = { type: 'ignite', reg, x: spec.x, z: spec.z, prog: 0, done: false };
+    } else if (spec.type === 'clear') {
+      if (!st.rubble || !st.rubble.alive) return;
+      task = { type: 'clear', reg, prog: 0, done: false };
     }
     if (task) { this.tasks.push(task); w.emit('task', task); }
     reg.task = task;
@@ -81,6 +86,8 @@ export class Engineering {
       if (task.type === 'stakes' && task.pts.every(p => p.done)) { task.done = true; this.finish(task); }
       if (task.type === 'ladders') this.updateLadderTask(task, dt);
       if (task.type === 'pontoon' && task.pont.done) { task.done = true; this.finish(task); w.emit('pontoon', task.pont); }
+      if (task.type === 'clear' && (!st.rubble || !st.rubble.alive)) { task.done = true; this.finish(task); }
+      if (task.type === 'ignite' && task.done) { /* finished in workBlow */ }
     }
     this.tasks = this.tasks.filter(t => !t.cancelled && !t.done);
     // ladders: raising, falling, being pushed off by defenders
@@ -113,7 +120,7 @@ export class Engineering {
           return;
         }
       }
-    } else if (task.type === 'demolish' || task.type === 'pontoon') {
+    } else if (task.type === 'demolish' || task.type === 'pontoon' || task.type === 'ignite' || task.type === 'clear') {
       a.job = { task, off: randRange(-1.6, 1.6) };
     }
   }
@@ -154,6 +161,14 @@ export class Engineering {
       const tip = p.z0 + p.dir * p.len;
       gx = p.x + j.off; gz = tip - p.dir * (1.2 + Math.abs(j.off)); face = p.dir > 0 ? 0 : Math.PI;
       working = Math.hypot(gx - a.x, gz - a.z) < 1.3;
+    } else if (task.type === 'ignite') {
+      gx = task.x + j.off; gz = task.z; face = 0;
+      working = Math.hypot(gx - a.x, gz - a.z) < 2;
+    } else if (task.type === 'clear') {
+      const r = st.rubble;
+      if (!r || !r.alive) { task.done = true; this.finish(task); return false; }
+      gx = (r.x0 + r.x1) / 2 + j.off * 6; gz = r.z0 - 2; face = 0;
+      working = Math.hypot(gx - a.x, gz - a.z) < 2;
     }
     const dx = gx - a.x, dz = gz - a.z, d = Math.hypot(dx, dz);
     if (working) {
@@ -187,6 +202,18 @@ export class Engineering {
       if (task.prog >= 1) this.collapseBridge(task.bridge, task);
     } else if (task.type === 'pontoon') {
       st.growPontoon(task.pont, 0.14 * skill);
+    } else if (task.type === 'ignite') {
+      task.prog = (task.prog || 0) + 0.25 * skill;
+      if (task.prog >= 1 && !task.done) {
+        if (w.fire) w.fire.ignite(task.x, task.z, 6);
+        task.done = true; this.finish(task);
+      }
+    } else if (task.type === 'clear') {
+      const r = st.rubble;
+      if (r && r.alive) {
+        r.hp -= 2.2 * skill;
+        // Dynamics.update clears the rubble when hp <= 0; update() then finishes this task
+      } else { task.done = true; this.finish(task); }
     }
   }
 
@@ -257,6 +284,17 @@ export class Engineering {
     const w = this.w, st = this.stage, T = a.T;
     const crew = a.crew.filter(c => c.alive).length;
     const k = crew / T.crew;
+    if (T.sub === 'wagon') {
+      if (crew === 0) { a.dspd = 0; a.dh = a.heading; return; }
+      const goal = a.escortGoal || { x: 260, z: a.z };
+      const gx = goal.x, gz = goal.z;
+      const d = Math.hypot(gx - a.x, gz - a.z);
+      const p = w.steerTo(a, gx, gz, 1, dt) || [gx, gz];
+      a.dh = Math.atan2(p[0] - a.x, p[1] - a.z);
+      a.dspd = d > 12 ? T.max : d > 0.6 ? T.max * Math.max(0.25, d / 12) : 0;
+      for (const c of a.crew) if (c.alive) c.st.push = 1;
+      return;
+    }
     if (T.sub === 'ram') {
       const g = st.gates.find(x => x.alive);
       if (!g || crew === 0) {

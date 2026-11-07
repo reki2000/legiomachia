@@ -441,7 +441,8 @@ export class BodyRenderer {
         let j = a.joints;
         const st2 = a.st;
         if (a.state === S_ALIVE) {
-          const every = lod === 0 ? 1 : lod === 1 ? 2 : 4;
+          // adaptive quality: poseSkip stretches the pose-recompute interval (set by main.js)
+          const every = (lod === 0 ? 1 : lod === 1 ? 2 : 4) * (this.poseSkip || 1);
           const ay = a.y + a.yOff; // floor steps are eased out, see World.constrain
           if (!a.poseValid || (frame + a.id) % every === 0) {
             const B = setBasisYaw(a.basis, a.x, ay, a.z, a.heading);
@@ -473,7 +474,7 @@ export class BodyRenderer {
           } else sh.disc(x, world.stage.floorAt(x, z) + 0.03, z, 0.7, 0.7, 1, 0, SHADOW);
         } else if (selected) sh.disc(a.x, a.y + 0.05, a.z, 1.2, 1.2, 1, 0, a.team === 0 ? SEL : SEL_ENEMY);
       } else {
-        if (lod === 2 && a.state === S_ALIVE && (frame + a.id) % 2 && a.poseValid) {
+        if (lod === 2 && a.state === S_ALIVE && (frame + a.id) % (2 * (this.poseSkip || 1)) && a.poseValid) {
           // far animals: reuse last frame's joints (translated)
           const dx = a.x - a.poseX, dy = a.y - a.poseY, dz = a.z - a.poseZ;
           if (a.mj) for (let k = 0; k < a.mj.length; k += 3) { a.mj[k] += dx; a.mj[k + 1] += dy; a.mj[k + 2] += dz; }

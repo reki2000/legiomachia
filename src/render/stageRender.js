@@ -7,6 +7,7 @@ import { col } from './segments.js';
 const UP = new THREE.Vector3(0, 1, 0);
 const C_RED_FLAG = col(0xc03030), C_BLUE_FLAG = col(0x3a5ac8), C_NEUTRAL = col(0xcfc8b0);
 const C_HULL = col(0x4e3420), C_WOOD = col(0x6e4e2e), C_WOOD2 = col(0x8a6a40), C_ROPE = col(0x9a8a60), C_DARK = col(0x3a2a1a);
+const C_FIRE = col(0xff7a26), C_ROCK = col(0x8a8478);
 
 export class StageRenderer {
   constructor(scene, stage) {
@@ -93,6 +94,19 @@ export class StageRenderer {
     }
     if (stage.trees && stage.trees.length) this.buildForest(stage.trees);
     if (stage.harbor) this.buildHarbor(boxes, roofs, stoneC);
+    // village (and any stage with bare structs but no city/harbour): houses with roofs, low fences.
+    // struct h is the absolute top of the block (terrain + height), as in buildVillage.
+    if (stage.structs.length && !stage.city && !stage.harbor) {
+      for (const s of stage.structs) {
+        if (s.type === 'house') {
+          const hc = [0xc8b898, 0xb8a888, 0xd0c0a0][Math.floor(rand() * 3)];
+          add(s.x0, -1, s.z0, s.x1, s.h, s.z1, hc);
+          roofs.push([(s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75]);
+        } else if (s.type === 'fence') {
+          add(s.x0, -1, s.z0, s.x1, s.h, s.z1, woodC[Math.floor(rand() * 3)]);
+        }
+      }
+    }
     // boats: a tapered hull, a bench and a mast. ships: a long hull with a deck, a mast, a yard
     // with the sail furled on it, and a raised stern
     const hull = [];
@@ -382,6 +396,44 @@ export class StageRenderer {
       let c = cache.get(d.color);
       if (!c) { c = col(d.color); cache.set(d.color, c); }
       box.seg(d.x - cx, d.y - cy, d.z - cz, d.x + cx, d.y + cy, d.z + cz, 0, 1, 0, d.w, d.w * 0.6, c);
+    }
+    // naval: enemy war galleys, drawn like the landing boats; a plank runs to the shore (+z)
+    if (st.galleys) {
+      const WL = st.WL;
+      for (const g of st.galleys) {
+        const len = g.len || 22, wid = g.width || 5;
+        if (!visible(g.x, WL, g.z, len)) continue;
+        const fx = Math.sin(g.heading || 0), fz = Math.cos(g.heading || 0), rx = fz, rz = -fx;
+        const hl = len / 2, hw = wid / 2;
+        box.seg(g.x - fx * hl, WL - 0.25, g.z - fz * hl, g.x + fx * hl, WL - 0.25, g.z + fz * hl, rx, 0, rz, wid * 0.8, 0.5, C_HULL);
+        for (const s of [-1, 1]) box.seg(g.x - fx * hl * 0.9 + rx * hw * s, WL + 0.1, g.z - fz * hl * 0.9 + rz * hw * s, g.x + fx * hl * 0.9 + rx * hw * 0.6 * s, WL + 0.1, g.z + fz * hl * 0.9 + rz * hw * 0.6 * s, 0, 1, 0, 0.15, 0.7, C_WOOD);
+        box.seg(g.x + fx * hl * 0.9, WL - 0.3, g.z + fz * hl * 0.9, g.x + fx * (hl + 0.4), WL + 0.8, g.z + fz * (hl + 0.4), rx, 0, rz, wid * 0.5, 0.25, C_WOOD);
+        box.seg(g.x, WL + 0.4, g.z, g.x, WL + 7, g.z, 1, 0, 0, 0.18, 0.18, C_DARK); // mast
+        if (g.plank) box.seg(g.x, WL + 0.35, g.z + hl * 0.6, g.x, WL + 0.35, g.z + hl * 0.6 + 8, 0, 1, 0, 1.6, 0.15, C_WOOD2);
+      }
+    }
+    // fire glow: a small flickering orange block over each burning item (first 40)
+    if (world.fire) {
+      let n = 0;
+      for (const it of world.fire.items) {
+        if (it.state !== 1) continue;
+        if (++n > 40) break;
+        if (!visible(it.x, 1, it.z, it.r + 4)) continue;
+        const y = st.floorAt(it.x, it.z) + 0.5;
+        const fl = 0.7 + 0.3 * Math.sin(world.time * 9 + it.x * 1.7 + it.z);
+        box.seg(it.x, y, it.z, it.x, y + 1.3 * fl, it.z, 1, 0, 0, 0.9 * fl, 0.9 * fl, C_FIRE);
+      }
+    }
+    // landslide: the rockfall block across the pass, until the engineers clear it
+    if (st.rubble && st.rubble.alive) {
+      const r = st.rubble, zm = (r.z0 + r.z1) / 2;
+      if (visible((r.x0 + r.x1) / 2, 2, zm, (r.x1 - r.x0) / 2 + 4)) {
+        for (let i = 0; i < 7; i++) {
+          const x = r.x0 + (r.x1 - r.x0) * (i + 0.5) / 7;
+          const y = st.floorAt(x, zm);
+          box.seg(x, y, zm, x + 0.8, y + 1.2 + (i % 3) * 0.7, zm + 0.4, 0, 1, 0, 2.6, 2.2, C_ROCK);
+        }
+      }
     }
     // rubble where the gate stood
     for (const gm of this.gateMeshes) {
