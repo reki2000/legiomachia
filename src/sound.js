@@ -1,6 +1,7 @@
 // Procedural WebAudio sound: no assets. Metal clashes, horns, war cries,
 // hoof rumble and arrow volleys, attenuated by distance to the camera.
 import { Music } from './music.js';
+import { trackFor } from './tracks.js';
 
 export class Sound {
   constructor() {
@@ -9,6 +10,42 @@ export class Sound {
     this.rumbleLevel = 0;
     this.musicOn = false;
     this.rainLevel = 0;
+    // music context from main ({ family, stage, weather, seed }): may arrive
+    // before unlock() creates the Music, so it is stored and applied later
+    this.musicContext = null;
+    this._appliedTrackKey = null;
+    // continuous music intensity bookkeeping
+    this._intSmooth = null;
+    this._prevKills = null;
+    this._prevKillT = null;
+    this._deathRate = 0;
+  }
+  // Store the stage/weather/seed context; apply it to the music when there is
+  // one. A new track is only loaded when family/stage/seed actually change, so
+  // a weather-only update does not restart the song.
+  setMusicContext(ctxObj) {
+    if (!ctxObj) return;
+    this.musicContext = { ...(this.musicContext || {}), ...ctxObj };
+    this.applyMusicContext();
+  }
+  applyMusicContext() {
+    if (!this.music || !this.musicContext) return;
+    const c = this.musicContext;
+    if (c.family !== undefined || c.stage !== undefined || c.seed !== undefined) {
+      const key = `${c.family || ''}|${c.stage || ''}|${c.seed ?? ''}`;
+      if (key !== this._appliedTrackKey) {
+        this._appliedTrackKey = key;
+        this.music.setTrack(trackFor(c.family, c.stage), c.seed);
+      }
+    }
+    if (c.weather) this.music.setWeatherMode(c.weather);
+  }
+  setWeatherMode(key) {
+    this.musicContext = { ...(this.musicContext || {}), weather: key };
+    if (this.music) this.music.setWeatherMode(key);
+  }
+  gameOver(win) {
+    if (this.music) this.music.playJingle(win);
   }
   setRain(v) {
     this.rainLevel = v;
@@ -33,6 +70,7 @@ export class Sound {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noise = buf;
     this.music = new Music(ctx, buf, this.master);
+    this.applyMusicContext();
     if (this.musicOn) this.music.setEnabled(true);
     // continuous battle bed: filtered noise (crowd + hooves)
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
@@ -131,7 +169,8 @@ export class Sound {
       case 'thud': if (this.allow('thud', 2)) this.noiseBurst(g * 1.3, 0.4, 80, 0.7, 'lowpass'); break;
       case 'trumpet': if (this.allow('trumpet', 1)) this.trumpet(g); break;
       case 'gatehit': if (this.allow('gate', 1)) { this.noiseBurst(g * 1.6, 0.6, 70, 0.8, 'lowpass'); this.noiseBurst(g * 0.6, 0.2, 400, 1); } break;
-      case 'gatebreak': this.noiseBurst(1.2, 1.5, 90, 0.6, 'lowpass'); this.cry(0.8); break;
+      case 'gatebreak': this.noiseBurst(1.2, 1.5, 90, 0.6, 'lowpass'); this.cry(0.8); if (this.music) this.music.stinger('gatebreak'); break;
+      case 'reinforce': if (this.music) this.music.stinger('reinforce'); break;
       case 'bridge': this.noiseBurst(1.0, 2.0, 200, 0.5, 'lowpass'); break;
       case 'rock': if (this.allow('rock', 2)) this.noiseBurst(g * 1.4, 0.5, 90, 0.7, 'lowpass'); break;
       case 'onager': if (this.allow('onager', 1)) this.noiseBurst(g * 0.8, 0.25, 250, 1.2); break;
@@ -140,13 +179,13 @@ export class Sound {
       case 'work': if (g > 0.15 && this.allow('work', 2)) this.noiseBurst(g * 0.35, 0.06, 1400, 4); break;
       case 'bite': if (g > 0.15 && this.allow('bite', 2)) this.noiseBurst(g * 0.5, 0.12, 700, 3); break;
       case 'ladderfall': case 'fall': if (this.allow('fall', 2)) this.noiseBurst(g * 0.8, 0.3, 150, 0.8, 'lowpass'); break;
-      case 'generaldeath': case 'officerdeath': this.horn(0.5, 82, 2.4); break;
+      case 'generaldeath': this.horn(0.5, 82, 2.4); if (this.music) this.music.stinger('generaldeath'); break;
+      case 'officerdeath': this.horn(0.5, 82, 2.4); break;
       case 'reserve': this.horn(0.5, 123, 1.5); break;
     }
   }
   update(dt, world, camera, ts) {
     if (!this.ctx) return;
-    this.music.setIntensity(world.phase === 'battle' ? 1 : 0.3);
     // ambient bed follows how much fighting / galloping is near the camera
     let fight = 0, gallop = 0;
     const cx = camera.position.x, cz = camera.position.z;
@@ -160,6 +199,30 @@ export class Sound {
       if (a.kind !== 0 && Math.hypot(a.vx, a.vz) > 4) gallop += w * 4;
       else if (Math.hypot(a.vx, a.vz) > 3.5) gallop += w * 0.3;
     }
+    // continuous music intensity: a base for the phase, plus how much fighting
+    // is in earshot, plus the smoothed casualty rate, minus a dip while the
+    // player's own regiments are routing. Smoothed again here so it breathes.
+    if (world.kills && typeof world.time === 'number') {
+      const kills = world.kills[0] + world.kills[1];
+      if (this._prevKills === null) { this._prevKills = kills; this._prevKillT = world.time; }
+      else if (world.time - this._prevKillT >= 0.5) {
+        const raw = (kills - this._prevKills) / Math.max(0.001, world.time - this._prevKillT);
+        this._deathRate = this._deathRate * 0.6 + raw * 0.4;
+        this._prevKills = kills; this._prevKillT = world.time;
+      }
+    }
+    let target = world.phase === 'battle' ? 0.45 : 0.18;
+    target += Math.min(0.35, fight * 0.01);
+    target += Math.min(0.2, this._deathRate * 0.02);
+    if (world.regs) {
+      let routs = 0;
+      for (const r of world.regs) if (r.team === 0 && r.order === 'rout') routs++;
+      target -= Math.min(0.2, routs * 0.05);
+    }
+    target = Math.min(1, Math.max(0, target));
+    if (this._intSmooth === null) this._intSmooth = target;
+    else this._intSmooth += (target - this._intSmooth) * Math.min(1, dt * 1.5);
+    if (this.music) this.music.setIntensity(this._intSmooth);
     const k = Math.min(1, ts);
     this.bed.gain.value += (Math.min(0.5, fight * 0.006) * k - this.bed.gain.value) * Math.min(1, dt * 2);
     this.hoof.gain.value += (Math.min(1.2, gallop * 0.02) * k - this.hoof.gain.value) * Math.min(1, dt * 2);
