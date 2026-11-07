@@ -47,7 +47,7 @@ export const TYPES = {
   dog: { kind: K_DOG, name: '軍用犬', hp: 50, max: 9.5, march: 3, accel: 12, turn: 6, radius: 0.3, ext: 0, mass: 38, chargeDist: 400, disc: 0.7 },
   ram: { kind: K_ENG, name: '破城槌', sub: 'ram', hp: 1800, max: 1.3, march: 1.3, accel: 0.8, turn: 0.5, radius: 1.3, ext: 2.2, mass: 5000, crew: 6, disc: 1 },
   onager: { kind: K_ENG, name: '投石機', sub: 'onager', hp: 600, max: 0.7, march: 0.7, accel: 0.5, turn: 0.5, radius: 1.3, ext: 0.9, mass: 2500, crew: 4, range: 280, disc: 1 },
-  wagon: { kind: K_ENG, name: '輜重車', sub: 'wagon', hp: 900, max: 1.7, march: 1.7, accel: 0.7, turn: 0.6, radius: 1.2, ext: 1.9, mass: 1800, crew: 2, disc: 1 },
+  wagon: { kind: K_ENG, name: '輜重車', sub: 'wagon', hp: 2400, max: 1.9, march: 1.9, accel: 0.7, turn: 0.6, radius: 1.2, ext: 1.9, mass: 1800, crew: 2, disc: 1 },
 };
 
 export const SHIELD_FOR = {
