@@ -5,6 +5,17 @@ import { W_BANNER, SH_NONE } from '../anim/human.js';
 import { WEAPONS, K_INF, K_CAV, K_ELE, K_CHR, K_DOG, K_ENG, TEAM_FLAG } from './defs.js';
 import { isActive } from './agent.js';
 
+// Enemy (team 1) AI difficulty: reaction interval multiplier, reserve-commit
+// thresholds and morale-aura multiplier. 'normal' is exactly the pre-existing behaviour.
+export const DIFF = {
+  easy: { react: 1.8, reserveMorale: 0.42, reserveTime: 150, auraMul: 0.85 },
+  normal: { react: 1, reserveMorale: 0.55, reserveTime: 75, auraMul: 1 },
+  hard: { react: 0.55, reserveMorale: 0.68, reserveTime: 40, auraMul: 1.15 },
+};
+export function diffFor(w, team) {
+  return team === 1 ? (DIFF[w.difficulty] || DIFF.normal) : DIFF.normal;
+}
+
 export class Army {
   constructor(team, name) {
     this.team = team; this.name = name;
@@ -30,6 +41,7 @@ export class Command {
     this.auraT = 0; this.posT = 0; this.checkT = 0; this.genT = 0;
     this.started = false; this.deployDone = false;
     this.riverTrigger = false;
+    this.clearT = 0;
   }
   setup() {
     const w = this.w;
@@ -58,13 +70,15 @@ export class Command {
         wing.aiT -= dt;
         if (wing.aiT > 0) continue;
         const alive = w.commanderAlive(wing.commander) || !wing.commander;
-        wing.aiT = alive ? 1 : 3.5; // leaderless wings react slowly
+        wing.aiT = alive ? (army.team === 1 ? 1 * diffFor(w, 1).react : 1) : 3.5; // leaderless wings react slowly
         if (w.auto[army.team]) this.wingAI(army, wing);
         if (alive && wing.commander) wing.commander.pointT = 1.2;
       }
     }
     if (this.genT <= 0) this.genT = 3;
     this.stageTriggers();
+    this.clearT -= dt;
+    if (this.clearT <= 0) { this.clearT = 5; this.checkClearTask(); }
   }
 
   // ------------------------------------------------------------ leaders
@@ -133,6 +147,7 @@ export class Command {
       const army = w.armies[r.team];
       const g = army && army.general;
       if (g && w.commanderAlive(g) && Math.hypot(g.x - r.cx, g.z - r.cz) < 100) aura += 0.07;
+      if (r.team === 1) aura *= diffFor(w, 1).auraMul;
       r.aura = aura;
     }
   }
@@ -185,10 +200,11 @@ export class Command {
       if (r.team === army.team) { own += r.alive; if (r.engaged) engaged++; if (r.wing && r.wing.role !== 'reserve') { lineMorale += r.morale; ln++; } }
       else foe += r.alive;
     }
+    const diff = diffFor(w, army.team);
     for (const wing of army.wings) {
       if (wing.role === 'reserve' && !wing.committed) {
         const m = ln ? lineMorale / ln : 1;
-        if (w.time > 75 || (engaged > 1 && m < 0.55) || (army.posture === 'defend' && this.enemyInside(army))) {
+        if (w.time > diff.reserveTime || (engaged > 1 && m < diff.reserveMorale) || (army.posture === 'defend' && this.enemyInside(army))) {
           wing.committed = true;
           w.emit('reserve', wing);
         }
@@ -225,6 +241,8 @@ export class Command {
     for (const reg of wing.regs) {
       if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow) continue;
       if (reg.kind === K_CAV && reg.T.commander) continue;
+      // escort: the Legion guards the convoy, the Kingdom hunts the wagons
+      if (obj && obj.mode === 'escort' && this.escortAI(army, reg, obj)) continue;
       // retreat: everything but the rearguard marches for the exit
       if (obj && obj.mode === 'retreat' && army.team === 0 && reg.kind !== K_ENG && reg.type !== 'guard' && !obj.isRearguard(reg)) {
         const tz = obj.exit.z - 25;
@@ -262,6 +280,53 @@ export class Command {
         if (dn < dc * 0.6) reg.targetReg = e;
       }
     }
+  }
+  // escort mode: team 0 rings the convoy and fights off close threats; team 1
+  // hunts the wagons themselves (melee through their nearest escort, missiles direct)
+  escortAI(army, reg, obj) {
+    const w = this.w;
+    if (reg.kind === K_ENG || reg.type === 'wagon' || reg.type === 'engineer' || reg.type === 'guard') return false;
+    const wagons = (obj.wagons || []).filter(a => a && isActive(a));
+    if (army.team === 0) {
+      const threat = this.nearestThreat(reg, 45);
+      if (threat) { if (reg.order !== 'charge' || reg.targetReg !== threat) w.orderCharge(reg, threat); return true; }
+      if (!wagons.length) return false;
+      let cx = 0, cz = 0;
+      for (const a of wagons) { cx += a.x; cz += a.z; }
+      cx /= wagons.length; cz /= wagons.length;
+      const idx = w.regs.indexOf(reg);
+      const ang = idx * 2.399963, rad = 18 + (idx % 3) * 7;
+      const gx = cx + Math.cos(ang) * rad, gz = cz + Math.sin(ang) * rad;
+      if (Math.hypot(reg.cx - gx, reg.cz - gz) > 25) {
+        const key = Math.round(gx) + ',' + Math.round(gz);
+        if (reg.order !== 'move' || reg.objTarget !== key) { reg.objTarget = key; w.orderMove(reg, gx, gz); }
+      }
+      return true;
+    }
+    // team 1: prefer the wagons
+    let wagonReg = null, wd = 1e9;
+    for (const r of w.regs) {
+      if (r.team !== 0 || r.type !== 'wagon' || r.alive === 0) continue;
+      const d = Math.hypot(r.cx - reg.cx, r.cz - reg.cz);
+      if (d < wd) { wd = d; wagonReg = r; }
+    }
+    if (!wagonReg) return false;
+    const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
+    if (W && W.ranged && !W.ranged.ammo) {
+      const d = Math.hypot(wagonReg.cx - reg.cx, wagonReg.cz - reg.cz);
+      if (d < W.ranged.range - 5) { if (reg.order !== 'fire' || reg.targetReg !== wagonReg) w.orderFire(reg, wagonReg); return true; }
+      return false; // out of range: normal missile handling
+    }
+    // melee / cavalry: go through the wagon's nearest escort when one is close
+    let escort = null, edWagon = 1e9, edSelf = 1e9;
+    for (const r of w.regs) {
+      if (r.team !== 0 || r.type === 'wagon' || r.kind === K_ENG || r.alive === 0) continue;
+      const dw = Math.hypot(r.cx - wagonReg.cx, r.cz - wagonReg.cz);
+      if (dw < edWagon) { edWagon = dw; escort = r; edSelf = Math.hypot(r.cx - reg.cx, r.cz - reg.cz); }
+    }
+    const target = (escort && (edWagon < 25 || edSelf < 25)) ? escort : wagonReg;
+    if (reg.order !== 'charge' || reg.targetReg !== target) w.orderCharge(reg, target);
+    return true;
   }
   // capture mode: units with nothing close to fight make for the flag and fan out around it
   captureMove(army, reg, p) {
@@ -426,10 +491,34 @@ export class Command {
       for (const r of w.regs) {
         if (r.type !== 'engineer' || !w.auto[r.team] || r.team !== 0) continue;
         if (st.id === 'ford') continue; // the river can be waded
+        if (st.id === 'frozen' || st.id === 'marsh') continue; // ice / fordable marsh: no pontoon needed (flood keeps pontoons)
         const xs = st.pontoonXs;
         w.engineering.assign(r, { type: 'pontoon', x: xs ? xs[k++ % xs.length] : 70 * st.S });
       }
     }
+    if (st.id === 'landslide') this.assignClearTasks();
+    if (st.id === 'burnforest') {
+      // the Legion's engineers fire the forest lane; the Kingdom's get no such task
+      for (const r of w.regs) {
+        if (r.type !== 'engineer' || r.team !== 0 || !w.auto[0]) continue;
+        w.engineering.assign(r, { type: 'ignite', x: st.forestLaneX || 0, z: 0 });
+      }
+    }
+  }
+  // landslide: one auto engineer regiment per team clears the rockfall
+  assignClearTasks() {
+    const w = this.w, st = w.stage;
+    if (st.id !== 'landslide' || !st.rubble || !st.rubble.alive || !w.engineering) return;
+    for (let team = 0; team < 2; team++) {
+      if (!w.auto[team]) continue;
+      if (w.engineering.tasks.some(t => t.type === 'clear' && !t.done && !t.cancelled && t.reg && t.reg.team === team)) continue;
+      const reg = w.regs.find(r => r.team === team && r.type === 'engineer' && r.alive > 0);
+      if (reg) w.engineering.assign(reg, { type: 'clear' });
+    }
+  }
+  checkClearTask() {
+    const st = this.w.stage;
+    if (st.id === 'landslide' && st.rubble && st.rubble.alive) this.assignClearTasks();
   }
   stageTriggers() {
     const w = this.w, st = w.stage;

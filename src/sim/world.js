@@ -15,6 +15,7 @@ import { PROJ } from './projectiles.js';
 import { computeMount, computeCrew } from './mounts.js';
 import { Agent, Regiment, isActive, S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE } from './agent.js';
 import * as AI from './ai.js';
+import * as Combat from './combat.js';
 import { StageEvents } from './stageEvents.js';
 
 export { Agent, Regiment, isActive, S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE };
@@ -645,303 +646,32 @@ export class World {
   }
 
   // returns true when the lighter body was thrown (pair resolved)
-  impact(a, b, relv, nx, nz) {
-    const enemies = a.team !== b.team;
-    let heavy = a, light = b, sgn = 1;
-    if (b.mass > a.mass) { heavy = b; light = a; sgn = -1; }
-    const ratio = heavy.mass / light.mass;
-    const hx = nx * sgn, hz = nz * sgn;
-    const fx = this.fx;
-    if (ratio > 3 && light.kind === K_INF && heavy.kind !== K_DOG) {
-      const panic = heavy.mode === 'panic' || heavy.riderless;
-      if (!enemies && !panic && relv < 6) return false;
-      if (relv < 2.6 || heavy.kind === K_ENG) return false;
-      const lfx = Math.sin(light.heading), lfz = Math.cos(light.heading);
-      const facing = -(lfx * hx + lfz * hz);
-      const W = WEAPONS[light.weapon];
-      if (enemies && W.antiCav && facing > 0.4 && (light.st.brace > 0.3 || light.st.combat > 0.5)) {
-        if (heavy.kind === K_CAV && rand() < W.antiCav) {
-          this.damageMount(heavy, 999, -hx, -hz, 'impale');
-          this.emit('impale', heavy);
-          if (rand() < 0.6) return false;
-        } else if (heavy.kind === K_ELE) {
-          this.damageMount(heavy, randRange(60, 160) * W.antiCav, -hx, -hz);
-        }
-      }
-      const hvx = heavy.vx, hvz = heavy.vz;
-      const mult = heavy.kind === K_ELE ? 7 : heavy.kind === K_CHR ? 8 : 5;
-      let dmg = relv * mult * randRange(0.5, 1.2) * (enemies ? 1 : 0.3);
-      if (light.st.flinch > 0 || light.st.combat < 0.3) dmg *= 1.15;
-      // big, braced, skilful men keep their feet against a weaker impact
-      const stability = light.stats.size * (1 + light.defBonus) * (light.st.brace > 0.3 ? 1.6 : 1) * (0.6 + 0.4 * light.stamina);
-      if (relv < 4.2 * stability && heavy.kind === K_CAV) {
-        light.hp -= dmg * 0.4;
-        light.st.flinch = 1; light.st.action = ACT_NONE;
-        light.vx += hx * relv * 0.6; light.vz += hz * relv * 0.6;
-        heavy.vx -= hx * relv * 0.25; heavy.vz -= hz * relv * 0.25;
-        if (light.hp <= 0) this.killInf(light, light.vx, 0.5, light.vz, 0, 0, 0, -0.4);
-        return false;
-      }
-      const k = randRange(0.55, 1.0);
-      const up = randRange(1.2, 2.2) + relv * 0.26 * (heavy.kind === K_ELE ? 1.4 : 1);
-      const side = heavy.kind === K_ELE ? 0.8 : 0.4;
-      const bvx = hvx * k + hx * relv * side, bvz = hvz * k + hz * relv * side;
-      light.hp -= dmg;
-      if (fx) { fx.dustBurst(light.x, light.y + 0.3, light.z, 4, 1); if (dmg > 40) fx.blood(light.x, light.y + 1.2, light.z, bvx, bvz, 6); }
-      if (light.hp <= 0) { this.killInf(light, bvx, up, bvz, 0, 0, 0, -0.5); this.emit('death', light); }
-      else this.knockDown(light, bvx, up, bvz, -0.5);
-      this.moraleEvent(light, -0.04, 5);
-      const loss = relv * (light.mass / heavy.mass) * (heavy.kind === K_ELE ? 1.2 : 2.2);
-      heavy.vx -= hx * loss; heavy.vz -= hz * loss;
-      heavy.hits++;
-      this.emit('crash', heavy);
-      return true;
-    }
-    if (ratio <= 3 && a.kind !== K_INF && b.kind !== K_INF && a.kind !== K_DOG && b.kind !== K_DOG) {
-      if (enemies && relv > 5) {
-        const dmg = relv * relv * 0.6;
-        this.damageMount(light, dmg * randRange(0.6, 1.4) * ratio, hx, hz);
-        this.damageMount(heavy, dmg * randRange(0.3, 0.9) / ratio, -hx, -hz);
-        if (heavy.kind === K_CAV) heavy.q.rear = 1;
-        if (light.kind === K_CAV) light.q.rear = 1;
-        this.emit('crash', heavy);
-      }
-      return false;
-    }
-    if (a.kind === K_INF && b.kind === K_INF && enemies && relv > 3.2 && a.state === S_ALIVE && b.state === S_ALIVE) {
-      const stab = (u, sign) => u.mass * randRange(0.6, 1.4) * (1 + u.st.brace + (u.shield === SH_RECT ? 0.3 : 0) + u.defBonus) *
-        (1 + Math.max(0, sign * (u.vx * nx + u.vz * nz)) * 0.15) * (0.6 + 0.4 * u.stamina);
-      const sa = stab(a, 1), sb = stab(b, -1);
-      const loser = sa > sb ? b : a, winner = loser === a ? b : a;
-      const px = loser === b ? nx : -nx, pz = loser === b ? nz : -nz;
-      if (fx) fx.dustBurst((a.x + b.x) / 2, a.y + 0.4, (a.z + b.z) / 2, 2, 0.6);
-      this.emit('clash', loser);
-      if (relv > 5.5 && rand() < 0.35) {
-        loser.hp -= randRange(5, 15);
-        const bvx = winner.vx * 0.5 + px * relv * 0.35, bvz = winner.vz * 0.5 + pz * relv * 0.35;
-        if (loser.hp <= 0) this.killInf(loser, bvx, 1.2, bvz, px * 1.5, 0, pz * 1.5, 0.6);
-        else this.knockDown(loser, bvx, 1.2, bvz, 0.6);
-        winner.st.flinch = Math.max(winner.st.flinch, 0.35);
-        winner.vx *= 0.5; winner.vz *= 0.5;
-        return true;
-      }
-      loser.st.flinch = 1; loser.st.action = ACT_NONE;
-      loser.vx += px * relv * 0.6; loser.vz += pz * relv * 0.6;
-      winner.st.flinch = Math.max(winner.st.flinch, 0.4);
-      return false;
-    }
-    return false;
-  }
+  impact(a, b, relv, nx, nz) { return Combat.impact(this, a, b, relv, nx, nz); }
 
   // ------------------------------------------------------------- damage
-  resolveMelee(att, ax, az, t, weapon, dmgMul, mounted) {
-    const W = WEAPONS[weapon];
-    // the man on the high ground hits harder
-    if (this.stage.hilly && att) dmgMul *= 1 + clamp((att.y - t.y) * 0.04, -0.12, 0.16);
-    let dx = t.x - ax, dz = t.z - az;
-    const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-    const fx = this.fx;
-    const tfx = Math.sin(t.heading), tfz = Math.cos(t.heading);
-    const facing = -(tfx * dx + tfz * dz);
-    if (t.kind === K_INF) {
-      if (t.state === S_ALIVE && facing > 0.3 && !t.swimming && !(t.st.action === ACT_ATTACK && t.st.actionT > 0.3)) {
-        let pb;
-        if (t.shield !== SH_NONE) pb = 0.3 + 0.35 * t.st.combat + (t.shield === SH_RECT ? 0.1 : t.shield === SH_SMALL ? -0.08 : 0);
-        else pb = WEAPONS[t.weapon].reach < 1.2 ? 0.1 + 0.15 * t.st.combat : 0.05;
-        pb += t.defBonus;
-        pb *= 0.65 + 0.35 * t.stamina;
-        if (mounted) pb *= 0.6;
-        if (weapon === W_SPEAR || weapon === W_PIKE) pb *= 0.85;
-        const TW = WEAPONS[t.weapon];
-        if (TW.closeDist && l < TW.closeDist) pb *= 0.6;
-        if (rand() < pb) {
-          t.st.start(ACT_BLOCK, 0.45);
-          t.st.flinch = Math.max(t.st.flinch, 0.3);
-          t.stamina -= 0.015;
-          t.vx += dx * 0.9; t.vz += dz * 0.9;
-          if (fx) fx.sparks(t.x - dx * 0.4, t.y + 1.25, t.z - dz * 0.4, 5);
-          if (W.shieldBreak && t.shield !== SH_NONE && rand() < W.shieldBreak * 0.3) { t.shield = SH_NONE; this.emit('shieldbreak', t); }
-          this.emit('block', t);
-          return;
-        }
-      }
-      let dmg = randRange(W.dmg[0], W.dmg[1]) * dmgMul * (facing < -0.3 ? 1.5 : 1);
-      if (W.closeDist && !mounted && l < W.closeDist) dmg *= W.closeMul;
-      if (facing < -0.3) this.moraleHit(t, -0.05);
-      this.damageInf(t, dmg, dx, dz, mounted ? 3.2 : 2.2, att, W.knock);
-    } else {
-      const dmg = randRange(W.dmg[0], W.dmg[1]) * dmgMul;
-      const reachRider = t.kind === K_CAV || (t.kind === K_CHR && rand() < 0.5) || t.kind === K_ENG;
-      const alive = t.crew ? t.crew.map((c, i) => (c.alive ? i : -1)).filter(i => i >= 0) : [];
-      if (reachRider && alive.length && rand() < (W.antiCav ? 0.35 : 0.5)) {
-        this.damageCrew(t, t.kind === K_CAV ? 0 : alive[Math.floor(rand() * alive.length)], dmg, dx, dz);
-      } else {
-        let k = t.kind === K_ELE ? 0.45 : t.kind === K_ENG ? 0.3 : t.kind === K_DOG ? 1.2 : 0.55;
-        if (t.T.barding) k *= 0.6;
-        this.damageMount(t, dmg * k * (W.antiCav ? 1.6 : 1), dx, dz);
-      }
-      if (fx) fx.blood(t.x, t.y + 1.1, t.z, dx, dz, 4);
-    }
-  }
+  resolveMelee(att, ax, az, t, weapon, dmgMul, mounted) { return Combat.resolveMelee(this, att, ax, az, t, weapon, dmgMul, mounted); }
 
-  damageInf(t, dmg, dx, dz, force, att, knock = 0) {
-    t.hp -= dmg;
-    t.lastHitT = this.time;
-    if (this.fx) this.fx.blood(t.x, t.y + 1.2, t.z, dx * 1.5, dz * 1.5, dmg > 40 ? 8 : 4);
-    this.moraleHit(t, -0.02);
-    if (t.hp <= 0) {
-      if (att) { this.kills[att.team]++; att.kills = (att.kills || 0) + 1; if (att.kind === K_INF) att.morale = Math.min(1.2, att.morale + 0.04); }
-      const r = rand();
-      if (r < 0.3) this.killInf(t, t.vx * 0.3, 0, t.vz * 0.3, dx * 0.5, 0, dz * 0.5, 0.2);
-      else if (r < 0.8) this.killInf(t, t.vx * 0.4, 0.5, t.vz * 0.4, dx * force, 0.4, dz * force, 0.7);
-      else this.killInf(t, t.vx * 0.5, 0.3, t.vz * 0.5, -dx * 0.8 + dz * 1.2, 0.2, -dz * 0.8 - dx * 1.2, 0.6);
-      this.emit('death', t);
-    } else if (knock && rand() < knock * (1.4 - t.stats.size * 0.5)) {
-      this.knockDown(t, dx * force, 0.8, dz * force, 0.6);
-      this.emit('hurt', t);
-    } else {
-      t.st.flinch = 1;
-      if (t.st.action === ACT_ATTACK && t.st.actionT < 0.45) t.st.action = ACT_NONE;
-      t.vx += dx * 1.6; t.vz += dz * 1.6;
-      this.emit('hurt', t);
-    }
-  }
+  damageInf(t, dmg, dx, dz, force, att, knock = 0) { return Combat.damageInf(this, t, dmg, dx, dz, force, att, knock); }
 
-  damageMount(t, dmg, dx, dz, cause) {
-    if (t.state !== S_ALIVE) return;
-    t.hp -= dmg;
-    if (t.kind === K_CAV && dmg > 30 && rand() < 0.3) t.q.rear = 1;
-    if (t.kind === K_ELE && t.mode !== 'panic') t.rage = 1;
-    if (t.hp <= 0) this.killMount(t, dx, dz, cause);
-  }
+  damageMount(t, dmg, dx, dz, cause) { return Combat.damageMount(this, t, dmg, dx, dz, cause); }
 
-  damageCrew(t, ci, dmg, dx, dz) {
-    const c = t.crew[ci];
-    if (!c || !c.alive) return;
-    c.hp -= dmg;
-    c.st.flinch = 1;
-    if (c.hp <= 0) {
-      this.dismount(t, ci, dx * 2, 0.5, dz * 2, true);
-      if (t.kind === K_CAV) {
-        t.riderless = true; t.mode = 'riderless'; t.modeT = 0; t.dspd = 8;
-        this.setTarget(t, null);
-        this.emit('riderdeath', t);
-      }
-    }
-  }
+  damageCrew(t, ci, dmg, dx, dz) { return Combat.damageCrew(this, t, ci, dmg, dx, dz); }
 
-  poseForRagdoll(a) {
-    const B = setBasisYaw(a.basis, a.x, a.y, a.z, a.heading);
-    poseHuman(a.joints, a.st, a.weapon, a.shield, SEAT_GROUND, B);
-  }
+  poseForRagdoll(a) { return Combat.poseForRagdoll(this, a); }
 
-  killInf(a, vx, vy, vz, ix, iy, iz, topple) {
-    if (a.state === S_DEAD || a.state === S_GONE) return;
-    if (!a.rag) {
-      if (a.state === S_GETUP && a.blendFrom) a.joints.set(a.blendFrom);
-      else this.poseForRagdoll(a);
-      a.rag = new Ragdoll(a.joints, a.weapon === W_BOW ? 'l' : 'r');
-      this.ragList.push(a);
-    }
-    a.rag.kick(vx, vy, vz, ix, iy, iz, topple);
-    a.state = S_DEAD; a.hp = 0;
-    this.setTarget(a, null);
-    a.vx = a.vz = 0;
-    if (a.carry && this.engineering) this.engineering.dropCarry(a);
-    this.moraleEvent(a, -0.035, 5);
-    if (this.command) this.command.onDeath(a);
-  }
+  killInf(a, vx, vy, vz, ix, iy, iz, topple) { return Combat.killInf(this, a, vx, vy, vz, ix, iy, iz, topple); }
 
-  knockDown(a, vx, vy, vz, topple) {
-    if (a.state !== S_ALIVE && a.state !== S_GETUP) return;
-    if (a.state === S_GETUP && a.blendFrom) a.joints.set(a.blendFrom);
-    else this.poseForRagdoll(a);
-    a.rag = new Ragdoll(a.joints, a.weapon === W_BOW ? 'l' : 'r');
-    a.rag.kick(vx, vy, vz, 0, 0, 0, topple);
-    this.ragList.push(a);
-    a.state = S_DOWN; a.downT = 0;
-    this.setTarget(a, null);
-    a.st.action = ACT_NONE;
-    a.vx = a.vz = 0;
-    if (a.carry && this.engineering) this.engineering.dropCarry(a);
-  }
+  knockDown(a, vx, vy, vz, topple) { return Combat.knockDown(this, a, vx, vy, vz, topple); }
 
-  getUp(a) {
-    const p = a.rag.x;
-    const st = this.stage;
-    a.blendFrom = new Float32Array(p);
-    a.x = p[J.PELVIS * 3]; a.z = p[J.PELVIS * 3 + 2];
-    a.prevX = a.x; a.prevZ = a.z;
-    a.y = st.floorAt(a.x, a.z);
-    if (st.hasWater && st.WL - a.y > 1.3) { a.y = st.WL - 1.3; a.swimming = true; }
-    const hx = p[J.HEAD * 3] - p[J.PELVIS * 3], hz = p[J.HEAD * 3 + 2] - p[J.PELVIS * 3 + 2];
-    if (Math.hypot(hx, hz) > 0.2) a.heading = Math.atan2(hx, hz);
-    a.rag = null;
-    a.state = S_GETUP; a.getupT = 0;
-    a.st.flinch = 0; a.st.run = 0; a.st.combat = 0.6;
-    a.vx = a.vz = 0;
-    a.stamina = Math.max(0, a.stamina - 0.1);
-  }
+  getUp(a) { return Combat.getUp(this, a); }
 
-  killMount(a, dx, dz, cause) {
-    if (a.state === S_DEAD) return;
-    a.state = S_DEAD; a.hp = 0;
-    this.setTarget(a, null);
-    const rx = -Math.cos(a.heading), rz = Math.sin(a.heading);
-    a.rollSide = (dx * rx + dz * rz) >= 0 ? 1 : -1;
-    if (rand() < 0.3) a.rollSide = -a.rollSide;
-    a.rollPivot = a.kind === K_ELE ? 1.0 : a.kind === K_CHR ? 0.75 : a.kind === K_DOG ? 0.15 : 0.42;
-    if (a.kind === K_CAV && a.T.animal === 'camel') a.rollPivot = 0.5;
-    a.rollV = cause === 'impale' ? 1.8 : 0.4;
-    a.dieT = 0;
-    const sp = Math.hypot(a.vx, a.vz);
-    if (a.crew) for (let i = 0; i < a.crew.length; i++) {
-      if (!a.crew[i].alive) continue;
-      if (a.kind === K_ENG) { this.dismount(a, i, 0, 0.3, 0, false); continue; }
-      this.dismount(a, i, a.vx * 0.9, randRange(1.5, 3) + sp * 0.12, a.vz * 0.9, rand() < 0.25 + sp * 0.02);
-    }
-    this.moraleEvent(a, a.kind === K_ELE ? -0.1 : -0.04, a.kind === K_ELE ? 15 : 6);
-    this.emit('mountdeath', a);
-    if (this.command) this.command.onDeath(a);
-  }
+  killMount(a, dx, dz, cause) { return Combat.killMount(this, a, dx, dz, cause); }
 
-  dismount(a, ci, vx, vy, vz, dies) {
-    const c = a.crew[ci];
-    c.alive = false;
-    computeMount(a);
-    const joints = computeCrew(a, ci);
-    const type = c.weapon === W_BOW ? 'archer' : c.weapon === W_SPEAR ? 'spear' : c.weapon === W_HAMMER ? 'engineer' : 'sword';
-    const n = new Agent(a.team, type, a.reg);
-    n.look = c.look; n.shield = SH_NONE; n.weapon = c.weapon;
-    n.stats = c.stats; n.name = c.name;
-    n.maxHp = c.maxHp; n.hp = Math.max(1, c.hp);
-    n.x = joints[0]; n.z = joints[2]; n.heading = a.heading;
-    n.joints.set(joints);
-    n.skirmish = true;
-    n.st.scale = c.st.scale;
-    this.addAgent(n);
-    n.y = this.stage.floorAt(n.x, n.z);
-    a.reg.agents.push(n);
-    n.rag = new Ragdoll(n.joints, n.weapon === W_BOW ? 'l' : 'r');
-    n.rag.kick(vx, vy, vz, 0, 0, 0, a.kind === K_CAV ? 0.5 : 0.2);
-    this.ragList.push(n);
-    if (dies) { n.state = S_DEAD; n.hp = 0; }
-    else { n.state = S_DOWN; n.hp -= randRange(10, 50); n.downT = 0; if (n.hp <= 0) n.state = S_DEAD; }
-    if (this.command) this.command.onDeath(a);
-    return n;
-  }
+  dismount(a, ci, vx, vy, vz, dies) { return Combat.dismount(this, a, ci, vx, vy, vz, dies); }
 
   // ------------------------------------------------------------- morale
-  moraleHit(a, d) { a.morale += d * (1.35 - a.baseMorale * 0.5); }
-  moraleEvent(a, d, R) {
-    const n = this.query(a.x, a.z, R);
-    const A = this.agents, q = this.qbuf;
-    for (let k = 0; k < n; k++) {
-      const t = A[q[k]];
-      if (t.team !== a.team || t === a) continue;
-      this.moraleHit(t, d);
-    }
-  }
+  moraleHit(a, d) { return Combat.moraleHit(this, a, d); }
+  moraleEvent(a, d, R) { return Combat.moraleEvent(this, a, d, R); }
 
   // ------------------------------------------------------------- missiles
   fireMissile(ox, oy, oz, t, high, team, type = P_ARROW, dmgMul = 1) {
@@ -979,104 +709,10 @@ export class World {
     return clamp(Math.atan2(G * d, 2 * 55 * 55) + Math.atan2(t.y - a.y, d), -0.6, 0.45);
   }
 
-  missileHit(ax, ay, az, vx, vy, vz, team, type, dmgMul) {
-    const P = PROJ[type];
-    const n = this.query(ax, az, 2.5);
-    const A = this.agents, q = this.qbuf;
-    for (let k = 0; k < n; k++) {
-      const t = A[q[k]];
-      if ((t.team === team && type !== P_ROCK) || (!isActive(t) && !t.riderless)) continue;
-      const hy = ay - t.y;
-      if (t.kind === K_INF) {
-        const top = 1.8 * t.st.scale;
-        if (hy < 0 || hy > top) continue;
-        if (Math.hypot(ax - t.x, az - t.z) > (type === P_ROCK ? 0.8 : 0.36)) continue;
-        if (type === P_ROCK) return 'rock';
-        const l = Math.hypot(vx, vz) || 1;
-        const dx = vx / l, dz = vz / l;
-        const facing = -(Math.sin(t.heading) * dx + Math.cos(t.heading) * dz);
-        if (t.shield !== SH_NONE && facing > 0.1) {
-          let pb = 0.45 + t.st.brace * 0.2 + t.st.combat * 0.1 + (t.shield === SH_RECT ? 0.15 : t.shield === SH_SMALL ? -0.12 : 0) + t.defBonus * 0.5;
-          if (vy < -15) pb += 0.15;
-          if (t.reg.formation === 'tight') pb += 0.2; // shields locked overhead
-          if (rand() < pb * P.shield) { if (this.fx) this.fx.sparks(ax, ay, az, 2); return 'shield'; }
-        }
-        // men carrying a ladder shelter under it
-        if (t.carry && rand() < 0.85) { if (this.fx) this.fx.sparks(ax, ay, az, 1); return 'shield'; }
-        const dmg = randRange(P.dmg[0], P.dmg[1]) * dmgMul * (hy > 1.5 ? 1.4 : 1);
-        t.hp -= dmg;
-        t.lastHitT = this.time;
-        this.moraleHit(t, -0.03);
-        if (this.fx) this.fx.blood(ax, ay, az, dx, dz, 4);
-        if (t.hp <= 0) {
-          this.kills[team]++;
-          const f = type === P_JAV || type === P_BOLT ? 2.4 : 1.6;
-          this.killInf(t, t.vx * 0.5, 0.2, t.vz * 0.5, dx * f, 0.2, dz * f, rand() < 0.5 ? 0.8 : 0.1);
-          this.emit('death', t);
-        } else if (P.knock && rand() < P.knock) this.knockDown(t, dx * 2, 0.5, dz * 2, 0.6);
-        else t.st.flinch = 0.8;
-        return 'body';
-      }
-      const d = this.distTo({ x: ax, z: az }, t);
-      if (d > t.radius + 0.1) continue;
-      const topH = t.kind === K_ELE ? 5.2 : t.kind === K_CAV ? (t.T.animal === 'camel' ? 3.2 : 2.5) : t.kind === K_DOG ? 0.8 : t.kind === K_ENG ? 3.2 : 2.4;
-      if (hy < 0 || hy > topH) continue;
-      if (type === P_ROCK) return 'rock';
-      if (t.kind === K_ENG) {
-        if (rand() < 0.93) { if (this.fx) this.fx.sparks(ax, ay, az, 1); return 'shield'; }
-        const alive = t.crew.map((c, i) => (c.alive ? i : -1)).filter(i => i >= 0);
-        if (alive.length) this.damageCrew(t, alive[Math.floor(rand() * alive.length)], randRange(35, 70), 0, 0);
-        return 'body';
-      }
-      const crewH = t.kind === K_ELE ? 3.4 : t.kind === K_CAV ? (t.T.animal === 'camel' ? 2.2 : 1.6) : 1.3;
-      if (t.crew && t.crew.length && hy > crewH) {
-        const alive = t.crew.map((c, i) => (c.alive ? i : -1)).filter(i => i >= 0);
-        if (alive.length && rand() < 0.7) {
-          this.damageCrew(t, alive[Math.floor(rand() * alive.length)], randRange(P.dmg[0], P.dmg[1]) * dmgMul, vx * 0.05, vz * 0.05);
-          return 'body';
-        }
-      }
-      let km = t.kind === K_ELE ? 0.3 : 0.7;
-      if (t.T.barding) km *= 0.45;
-      this.damageMount(t, randRange(P.dmg[0], P.dmg[1]) * 0.6 * km * dmgMul, vx * 0.05, vz * 0.05);
-      return 'body';
-    }
-    return null;
-  }
+  missileHit(ax, ay, az, vx, vy, vz, team, type, dmgMul) { return Combat.missileHit(this, ax, ay, az, vx, vy, vz, team, type, dmgMul); }
 
   // onager rock: bodies thrown around the impact point
-  rockImpact(x, y, z, vx, vz) {
-    const R = PROJ[P_ROCK].splash;
-    const n = this.query(x, z, R + 1);
-    const A = this.agents, q = this.qbuf;
-    const hit = [];
-    for (let k = 0; k < n; k++) hit.push(A[q[k]]);
-    for (const t of hit) {
-      if (!isActive(t) || Math.abs(t.y - y) > 3) continue;
-      const dx = t.x - x, dz = t.z - z, d = Math.hypot(dx, dz);
-      if (d > R) continue;
-      const f = 1 - d / R;
-      const nx = d > 0.01 ? dx / d : 0, nz = d > 0.01 ? dz / d : 0;
-      if (t.kind === K_INF) {
-        t.hp -= randRange(60, 150) * f;
-        const bvx = nx * 7 * f + vx * 0.08, bvz = nz * 7 * f + vz * 0.08;
-        if (t.hp <= 0) { this.killInf(t, bvx, 3 * f + 1, bvz, 0, 0, 0, -0.3); this.emit('death', t); }
-        else this.knockDown(t, bvx, 3 * f + 1, bvz, -0.3);
-      } else this.damageMount(t, randRange(60, 160) * f, nx, nz);
-    }
-    const st = this.stage;
-    for (const g of st.gates) {
-      if (!g.alive) continue;
-      if (x > g.x0 - 3 && x < g.x1 + 3 && z > g.z0 - 3 && z < g.z1 + 3) {
-        g.hp -= randRange(80, 160);
-        if (g.hp <= 0 && this.engineering) this.engineering.breakGate(g);
-      }
-    }
-    if (this.fire && rand() < 0.45) this.fire.ignite(x, z, 5);
-    if (this.fx) { this.fx.dustBurst(x, y + 0.3, z, 16, 2.2); if (st.hasWater && st.WL > y - 0.2) this.fx.splash(x, st.WL, z, 12); }
-    this.spawnDebris(x, y + 0.4, z, 5, 0.25, st.floorAt(x, z) > 3 ? 0x8a8478 : 0x6a5a40);
-    this.emit('rock', { x, z });
-  }
+  rockImpact(x, y, z, vx, vz) { return Combat.rockImpact(this, x, y, z, vx, vz); }
 
   // ------------------------------------------------------------- debris (splinters, planks, stones)
   spawnDebris(x, y, z, n, size, color, vel = 5) {
