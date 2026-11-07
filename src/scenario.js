@@ -6,7 +6,7 @@ import { FireSystem } from './sim/fire.js';
 import { setupDynamics } from './sim/dynamics.js';
 import { randRange, setSeed } from './util.js';
 import { W_BANNER, SH_NONE } from './anim/human.js';
-import { K_INF, K_CAV, commanderLook, TEAM_FLAG } from './sim/defs.js';
+import { K_INF, K_CAV, K_ENG, K_DOG, K_ELE, K_CHR, TYPES, commanderLook, TEAM_FLAG } from './sim/defs.js';
 
 const SPACING = {
   sword: [1.35, 1.55], axe: [1.45, 1.65], mace: [1.45, 1.65], spear: [1.3, 1.5], pike: [1.3, 1.45],
@@ -37,9 +37,13 @@ class Builder {
     const c = Math.max(1, Math.round(cols * scale * cm));
     const r = Math.max(1, Math.round(rows * scale / cm));
     const facing = o.facing !== undefined ? o.facing : team === 0 ? 0 : Math.PI;
-    const [sx, sz] = SPACING[type];
+    // era-pack types fall back to kind-based spacing (foot 1.35/1.55,
+    // horse 3.2/5.2, engines 8/9, beasts 10/10, dogs 2/2.2)
+    const TT = TYPES[type];
+    const [sx, sz] = SPACING[type] || (TT.kind === K_CAV ? [3.2, 5.2] : TT.kind === K_ENG ? [8, 9] : TT.kind === K_DOG ? [2.0, 2.2] : TT.kind === K_ELE || TT.kind === K_CHR ? [10, 10] : [1.35, 1.55]);
     const q = o.q !== undefined ? o.q : 0.5;
     const R = w.addRegiment(new Regiment(w, team, type, c, sx, sz, x, z, facing, name, q));
+    if (TYPES[type] && TYPES[type].feigned) R.feigned = true;
     const p = { x: 0, z: 0 };
     for (let i = 0; i < c * r; i++) {
       const a = new Agent(team, type, R, q);
@@ -114,6 +118,8 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   else if (st.id === 'canyon' || st.id === 'landslide') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
   else if (st.id === 'hills') field(b, { hills: true });
   else field(b, {});
+  // era packs may attach dramatic extras (fire ships and the like)
+  if (world.eraStageHooks) for (const h of world.eraStageHooks) h(b, st);
   // fire and dramatic stage dynamics attach to the finished deployment
   if (st.id === 'burnforest' || st.id === 'firestorm') world.fire = new FireSystem(world);
   setupDynamics(world);

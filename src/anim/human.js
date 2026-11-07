@@ -15,6 +15,7 @@ export const NJ = 18;
 
 export const W_SWORD = 0, W_SPEAR = 1, W_BOW = 2, W_AXE = 3, W_MACE = 4, W_PIKE = 5,
   W_GUN = 12, W_HANDGUN = 13, W_LANCE = 14, W_FIRELANCE = 15, W_FLAME = 16,   // era-pack weapons (phase 2+)
+  W_CANNON = 18, W_FIREBOW = 19, W_LONGBOW = 20,
   W_JAV = 6, W_SLING = 7, W_XBOW = 8, W_HAMMER = 9, W_BANNER = 10, W_NONE = 11;
 export const SH_NONE = 0, SH_ROUND = 1, SH_RECT = 2, SH_SMALL = 3;
 export const SEAT_GROUND = 0, SEAT_RIDE = 1, SEAT_STAND = 2, SEAT_ROW = 3; // ROW: an oarsman on his bench (st.rowPh drives the stroke)
@@ -24,7 +25,7 @@ export const ACT_NONE = 0, ACT_ATTACK = 1, ACT_BLOCK = 2, ACT_SHOOT = 3, ACT_CHE
 
 // weapon -> pose family
 const G_ONE = 0, G_SPEAR = 1, G_BOW = 2, G_PIKE = 3, G_JAV = 4, G_SLING = 5, G_XBOW = 6, G_BANNER = 7, G_NONE = 8;
-const GROUP = [G_ONE, G_SPEAR, G_BOW, G_ONE, G_ONE, G_PIKE, G_JAV, G_SLING, G_XBOW, G_ONE, G_BANNER, G_NONE, G_XBOW, G_XBOW, G_SPEAR, G_SPEAR, G_XBOW];
+const GROUP = [G_ONE, G_SPEAR, G_BOW, G_ONE, G_ONE, G_PIKE, G_JAV, G_SLING, G_XBOW, G_ONE, G_BANNER, G_NONE, G_XBOW, G_XBOW, G_SPEAR, G_SPEAR, G_XBOW, G_ONE, G_XBOW, G_BOW, G_BOW];
 export const ONE_HANDED = w => GROUP[w] === G_ONE;
 
 export const ATTACK_EVT = 0.47, SHOOT_EVT = 0.78, THROW_EVT = 0.52, SLING_EVT = 0.78, WORK_EVT = 0.5;

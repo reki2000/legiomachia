@@ -62,6 +62,7 @@ export class Command {
     if (!this.deployDone && w.time > 0.3) { this.deployDone = true; this.deployTasks(); }
     if (w.phase !== 'battle') return;
     if (!this.started) { this.started = true; this.battleTasks(); }
+    this.kiteRegiments();
     this.genT -= dt;
     for (const army of w.armies) {
       if (!army) continue;
@@ -218,6 +219,34 @@ export class Command {
     return !st.gates.every(g => g.alive);
   }
 
+  // feigned retreat (Mongol horse archers): a regiment flagged feigned
+  // keeps its distance from the nearest enemy regiment and falls back
+  // while its riders shoot over their shoulders, luring pursuers out.
+  // It only kites MELEE pursuers — against a missile-heavy enemy the
+  // standoff band sits inside their range and just gets shot.
+  kiteRegiments() {
+    const w = this.w;
+    for (const r of w.regs) {
+      if (!r.feigned || r.manual || r.alive === 0 || r.fleeT > 0) continue;
+      const e = w.nearestEnemyReg(r);
+      if (!e) continue;
+      let ranged = 0;
+      for (const m of e.agents) {
+        if (!m.alive) continue;
+        const wid = m.crew && m.crew.length ? m.crew[0].weapon : (m.T ? m.T.weapon : -1);
+        if (WEAPONS[wid] && WEAPONS[wid].ranged) ranged++;
+      }
+      if (ranged > e.alive * 0.4) continue;
+      const dx = r.cx - e.cx, dz = r.cz - e.cz, d = Math.hypot(dx, dz) || 1;
+      if (d < 70) {
+        const E = w.stage.extent;
+        r.tx = Math.max(-E, Math.min(E, r.cx + dx / d * 46));
+        r.tz = Math.max(-E, Math.min(E, r.cz + dz / d * 46));
+        r.hold = false;
+      }
+    }
+  }
+
   wingAI(army, wing) {
     const w = this.w, st = w.stage;
     const claimed = new Map();
@@ -239,6 +268,7 @@ export class Command {
       return;
     }
     for (const reg of wing.regs) {
+      if (reg.hookUntil && w.time > reg.hookUntil) { reg.manual = false; reg.hookUntil = 0; }
       if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow) continue;
       if (reg.kind === K_CAV && reg.T.commander) continue;
       // flood evacuation (dynamics.js) outranks battle orders until dry

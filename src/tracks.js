@@ -52,6 +52,23 @@ export const PHRASE = {
 
 // extra phrases for the other tracks (the field track uses only the ones above)
 
+// Miyako-bushi phrases for the Japan track: semitone steps from the
+// in-scale (0, 1, 4, 5, 7, 8, 10 over D), long breaths, sparse attacks.
+export const PHRASE_MIYAKO = {
+  jm1: [
+    [[0, 0, 6], [8, 1, 2], [10, 4, 4], [14, 5, 2]],
+    [[0, 7, 6], [8, 5, 2], [10, 4, 4], [14, 1, 2]],
+    [[0, 12, 4], [6, 8, 2], [8, 7, 4], [12, 5, 2], [14, 4, 2]],
+    [[0, 5, 8], [8, 4, 8]],
+  ],
+  jm2: [
+    [[0, 12, 2], [2, 12, 2], [4, 8, 2], [6, 7, 2], [8, 5, 4], [12, 4, 4]],
+    [[0, 0, 4], [4, 1, 2], [6, 4, 2], [8, 7, 4], [12, 12, 4]],
+    [[0, 8, 3], [3, 7, 1], [4, 5, 2], [6, 4, 2], [8, 1, 4], [12, 0, 4]],
+    [[0, 4, 6], [8, 5, 2], [10, 7, 2], [12, 12, 4]],
+  ],
+};
+
 // slow chant line for the siege climax: long held notes, few of them
 const PHRASE_CHANT = {
   c1: [
@@ -106,7 +123,85 @@ const SHARED = {
 // [bars, key (semitones above D), bass, drums, roots per bar (semitones above
 // the key), lead phrase(s), options] — as objects with a name so sections can
 // be queued by name ('intro', 'bridge', 'climax', ...).
+// Chinese pentatonic phrases (D E F# A B over D): one family, three
+// era variations — early sparse, mid fuller, late with a plucked lead.
+export const PHRASE_CN = {
+  cn1: [
+    [[0, 0, 6], [8, 2, 2], [10, 4, 4], [14, 7, 2]],
+    [[0, 9, 6], [8, 7, 2], [10, 4, 4], [14, 2, 2]],
+    [[0, 12, 4], [6, 9, 2], [8, 7, 4], [12, 4, 2], [14, 2, 2]],
+    [[0, 7, 8], [8, 4, 8]],
+  ],
+  cn2: [
+    [[0, 12, 2], [2, 12, 2], [4, 9, 2], [6, 7, 2], [8, 4, 4], [12, 2, 4]],
+    [[0, 0, 4], [4, 2, 2], [6, 4, 2], [8, 7, 4], [12, 9, 4]],
+    [[0, 9, 3], [3, 7, 1], [4, 4, 2], [6, 2, 2], [8, 0, 4], [12, 2, 4]],
+    [[0, 4, 6], [8, 7, 2], [10, 9, 2], [12, 12, 4]],
+  ],
+};
+const cnSections = lead => [
+  { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
+  { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true },
+  { name: 'melody', bars: 8, key: 0, bass: 'long', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'bridge', bars: 8, key: 5, bass: 'sparse', drums: 'sparse', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'climax', bars: 12, key: 0, bass: 'A', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['cn2', 'r1', lead], pad: true, harm: true },
+  { name: 'outro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true },
+];
+
+// Dorian phrases for the European eras (D E F G A B C over D).
+export const PHRASE_DORIAN = {
+  eu1: [
+    [[0, 0, 8], [8, 2, 4], [12, 4, 4]],
+    [[0, 7, 8], [8, 5, 4], [12, 4, 4]],
+    [[0, 9, 6], [6, 7, 2], [8, 5, 4], [12, 4, 4]],
+    [[0, 2, 8], [8, 0, 8]],
+  ],
+  eu2: [
+    [[0, 12, 3], [3, 11, 1], [4, 9, 2], [6, 7, 2], [8, 5, 3], [11, 4, 1], [12, 7, 2], [14, 9, 2]],
+    [[0, 7, 6], [8, 9, 2], [10, 11, 2], [12, 12, 4]],
+    [[0, 4, 4], [4, 5, 2], [6, 7, 2], [8, 9, 4], [12, 7, 4]],
+    [[0, 5, 8], [8, 4, 8]],
+  ],
+};
+const euSections = (lead, harm) => [
+  { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
+  { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true },
+  { name: 'melody', bars: 8, key: 0, bass: 'long', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'bridge', bars: 8, key: 5, bass: 'sparse', drums: 'sparse', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'climax', bars: 12, key: 0, bass: 'A', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['eu2', 'r1', lead], pad: true, harm },
+  { name: 'outro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true },
+];
+
 export const TRACKS = {
+  carthage: { ...SHARED, drumScale: 0.9, echoWet: 0.6, frameDrum: true, sections: restSections('egypt') },
+  // ------------------------------------------------------------ mongol: driving pluck over the shared battle frame
+  mongol: { ...SHARED, bpm: 100, leadInstrument: 'pluck', drumScale: 0.95, echoWet: 0.45, sections: restSections('egypt') },
+  // ------------------------------------------------------------ europe eras: dorian family (early plain, mid chant, late pluck)
+  'europe-early': { ...SHARED, bpm: 82, leadInstrument: 'saw', drumScale: 0.65, echoWet: 0.7, phrases: { ...PHRASE, ...PHRASE_DORIAN }, sections: euSections('eu1', false) },
+  'europe-mid': { ...SHARED, bpm: 88, leadInstrument: 'chant', drumScale: 0.75, echoWet: 0.75, phrases: { ...PHRASE, ...PHRASE_DORIAN, ...PHRASE_CHANT }, sections: euSections('eu2', true) },
+  'europe-late': { ...SHARED, bpm: 92, leadInstrument: 'pluck', drumScale: 0.85, echoWet: 0.55, phrases: { ...PHRASE, ...PHRASE_DORIAN }, sections: euSections('eu2', true) },
+  // ------------------------------------------------------------ china eras: pentatonic family, three variations
+  'china-early': { ...SHARED, bpm: 84, leadInstrument: 'pluck', drumScale: 0.7, echoWet: 0.6, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn1') },
+  'china-mid': { ...SHARED, bpm: 90, leadInstrument: 'pluck', drumScale: 0.8, echoWet: 0.55, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn2') },
+  'china-late': { ...SHARED, bpm: 94, leadInstrument: 'pluck', drumScale: 0.9, echoWet: 0.5, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn2') },
+  // ------------------------------------------------------------ japan (Sengoku): miyako-bushi, flute lead, taiko toms
+  japan: {
+    ...SHARED,
+    bpm: 88,
+    leadInstrument: 'flute',
+    drumScale: 0.85,
+    echoWet: 0.5,
+    frameDrum: true,
+    phrases: { ...PHRASE, ...PHRASE_MIYAKO },
+    sections: [
+      { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
+      { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true },
+      { name: 'melody', bars: 8, key: 0, bass: 'long', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['jm1', 'r1'], pad: true },
+      { name: 'bridge', bars: 8, key: 5, bass: 'sparse', drums: 'sparse', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: ['jm1', 'r1'], pad: true },
+      { name: 'climax', bars: 12, key: 0, bass: 'A', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['jm2', 'r1', 'jm1'], pad: true, harm: true },
+      { name: 'outro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true },
+    ],
+  },
   // ------------------------------------------------------------ field (original)
   field: {
     ...SHARED,

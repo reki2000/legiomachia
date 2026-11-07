@@ -575,7 +575,7 @@ export function actionEvent(w, a, act) {
   const oy = a.y + 1.5;
   if (act === ACT_SHOOT) {
     if (a.weapon === W_XBOW) { w.fireMissile(a.x + fx, oy - 0.1, a.z + fz, t, false, a.team, P_BOLT, a.dmgMul); a.st.loaded = false; }
-    else if (WEAPONS[a.weapon].ranged && WEAPONS[a.weapon].ranged.proj !== undefined && WEAPONS[a.weapon].gun) { w.fireMissile(a.x + fx, oy, a.z + fz, t, false, a.team, WEAPONS[a.weapon].ranged.proj, a.dmgMul); a.st.loaded = false; }
+    else if (WEAPONS[a.weapon].ranged && WEAPONS[a.weapon].ranged.proj !== undefined && (WEAPONS[a.weapon].gun || WEAPONS[a.weapon].ranged.proj !== P_ARROW)) { w.fireMissile(a.x + fx, oy, a.z + fz, t, a.volleyShot && !!WEAPONS[a.weapon].gun ? false : a.volleyShot, a.team, WEAPONS[a.weapon].ranged.proj, a.dmgMul); a.st.loaded = false; }
     else w.fireMissile(a.x + fx, oy, a.z + fz, t, a.volleyShot, a.team, P_ARROW, a.dmgMul);
   } else if (act === ACT_THROW) {
     w.fireMissile(a.x + fx, oy + 0.3, a.z + fz, t, false, a.team, P_JAV, a.dmgMul);
@@ -603,6 +603,7 @@ export function actionEvent(w, a, act) {
 function riderMorale(w, a, dt) {
   const r = a.crew && a.crew[0];
   if (!r) return;
+  if (a.lanceCd > 0) a.lanceCd -= dt;
   a.retarget -= 0;
   if ((a.id + w.stepN) % 30 === 0) scanThreats(w, a);
   updateMorale(w, a, dt, true);

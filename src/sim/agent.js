@@ -29,6 +29,7 @@ export class Agent {
     this.dvx = 0; this.dvz = 0; this.faceH = NaN; this.dh = 0; this.dspd = 0;
     this.radius = T.radius; this.ext = T.ext || 0;
     this.stats = genStats(quality);
+    if (T.trait) this.stats.trait = T.trait;   // dedicated units (berserkers, Spartans) always carry their trait
     const nf = genNameFull(team);
     this.name = nf.name; this.nickLook = nf.look;
     this.buddy = null; this.buddyGone = false; this.rageT = 0; this.droppedWeapon = false;

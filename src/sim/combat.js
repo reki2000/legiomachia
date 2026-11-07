@@ -15,6 +15,11 @@ import { computeMount, computeCrew } from './mounts.js';
 import { Agent, isActive, S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE } from './agent.js';
 
 export function resolveMelee(w, att, ax, az, t, weapon, dmgMul, mounted) {
+    // couched lance (era packs): a charging knight's first hit with a
+    // lance lands with the horse's full momentum; the lance then needs
+    // ~20 s out of the press before it can be couched again
+    const W0 = WEAPONS[weapon];
+    if (W0 && W0.lance && mounted && att && att.mode === 'charge' && !(att.lanceCd > 0)) { dmgMul *= 2.2; att.lanceCd = 20; }
     const W = WEAPONS[weapon];
     // the man on the high ground hits harder
     if (w.stage.hilly && att) dmgMul *= 1 + clamp((att.y - t.y) * 0.04, -0.12, 0.16);
@@ -65,6 +70,13 @@ export function resolveMelee(w, att, ax, az, t, weapon, dmgMul, mounted) {
     }
   }
 export function damageInf(w, t, dmg, dx, dz, force, att, knock = 0) {
+    // phalanx (era packs, TYPES.phalanx): a wall of spearpoints is hard
+    // from the front and soft from the flank or rear — scaled by the
+    // attack direction against the man's facing
+    if (t.T && t.T.phalanx && t.face !== undefined) {
+      const dot = Math.sin(t.face) * -dx + Math.cos(t.face) * -dz;
+      dmg *= dot > 0.5 ? 0.6 : dot < -0.3 ? 1.35 : 1.15;
+    }
     t.hp -= dmg;
     // a heavily wounded man may fumble his weapon away (phase 1): he
     // fights on at reduced effect with the weapon hidden from his hand

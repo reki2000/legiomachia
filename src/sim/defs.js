@@ -7,7 +7,7 @@ import { col } from '../render/segments.js';
 import { rand, randNormal, clamp } from '../util.js';
 
 export const K_INF = 0, K_CAV = 1, K_ELE = 2, K_CHR = 3, K_DOG = 4, K_ENG = 5;
-export const P_ARROW = 0, P_JAV = 1, P_STONE = 2, P_BOLT = 3, P_ROCK = 4, P_BULLET = 5;
+export const P_ARROW = 0, P_JAV = 1, P_STONE = 2, P_BOLT = 3, P_ROCK = 4, P_BULLET = 5, P_FIREARROW = 6;
 
 // reach in metres beyond body radii; dmg range; attack duration range
 export const WEAPONS = {
@@ -156,7 +156,7 @@ export function humanLook(team, role) {
   if (fn) { const L = fn(team, role); if (L) return L; }
   return baseHumanLook(team, role);
 }
-function baseHumanLook(team, role) {
+export function baseHumanLook(team, role) {
   const L = {
     skin: jit(pick([0xc99a78, 0xb98663, 0xa87552, 0xd6a986]), 0.05),
     tunic: null, sleeve: null, legs: null, helm: 0, helmCol: jit(0x8f9098), crest: null,

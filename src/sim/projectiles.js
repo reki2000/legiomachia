@@ -1,8 +1,8 @@
 // Ballistic missiles in flat typed arrays (ring buffer).
 import { groundHeight, waterLevel } from '../terrain.js';
-import { P_ARROW, P_JAV, P_STONE, P_BOLT, P_ROCK, P_BULLET } from './defs.js';
+import { P_ARROW, P_JAV, P_STONE, P_BOLT, P_ROCK, P_BULLET, P_FIREARROW } from './defs.js';
 import { col } from '../render/segments.js';
-import { cosmeticRand } from '../util.js';
+import { cosmeticRand, rand } from '../util.js';
 
 const CAP = 10000;
 const STUCK_LIFE = 35;
@@ -15,6 +15,7 @@ export const PROJ = {
   [P_BOLT]: { len: 0.45, w: 0.03, dmg: [45, 85], shield: 0.55, stick: true, col: col(0x5a4a30), drag: 0.0 },
   [P_ROCK]: { len: 0.55, w: 0.55, dmg: [60, 140], shield: 0, stick: false, col: col(0x9a948a), drag: 0.0, splash: 3.2 },
   [P_BULLET]: { len: 0.05, w: 0.05, dmg: [55, 100], shield: 0.3, stick: false, col: col(0x2a2a2a), drag: 0.0, knock: 0.1 },
+  [P_FIREARROW]: { len: 0.8, w: 0.02, dmg: [30, 60], shield: 1, stick: true, col: col(0xd86a20), drag: 0.0, ignite: 0.35 },
 };
 
 export class Projectiles {
@@ -58,13 +59,14 @@ export class Projectiles {
           const sx = p[j] + (nx - p[j]) * t, sy = p[j + 1] + (ny - p[j + 1]) * t, sz = p[j + 2] + (nz - p[j + 2]) * t;
           hit = world.missileHit(sx, sy, sz, v[j], v[j + 1], v[j + 2], this.team[i], ty, this.dmg[i]);
         }
-        if (hit) { f[i] = 0; if (ty === P_ROCK) world.rockImpact(nx, ny, nz, v[j], v[j + 2], this.team[i]); continue; }
+        if (hit) { f[i] = 0; if (ty === P_ROCK) world.rockImpact(nx, ny, nz, v[j], v[j + 2], this.team[i]); if (PROJ[ty].ignite && world.fire && rand() < PROJ[ty].ignite) world.fire.ignite(nx, nz, 3.5); continue; }
       }
       p[j] = nx; p[j + 1] = ny; p[j + 2] = nz;
       if (ny <= gy || ny < WL && ty === P_ROCK) {
         p[j + 1] = Math.max(gy, Math.min(ny, WL)) + 0.05;
         if (ty === P_ROCK) { world.rockImpact(nx, gy, nz, v[j], v[j + 2], this.team[i]); f[i] = 2; age[i] = STUCK_LIFE - 20; v[j] = 0; v[j + 1] = 1; v[j + 2] = 0; continue; }
         if (!PROJ[ty].stick || gy < WL - 0.3) { f[i] = 0; if (world.fx && gy < WL) world.fx.splash(nx, WL, nz, 3); continue; }
+        if (PROJ[ty].ignite && world.fire && rand() < PROJ[ty].ignite) world.fire.ignite(nx, nz, 3.5);
         f[i] = 2; age[i] = 0;
         // cosmeticRand: this gate only decides whether a dust puff is drawn;
         // it never touches simulation state, so it stays off the seeded PRNG
