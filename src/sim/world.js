@@ -54,7 +54,7 @@ export class World {
     this.stageEvents = new StageEvents(this); // timed stage events (flood, rockfall, ...)
     this.fire = null;         // FireSystem (burnforest / firestorm), set by buildScenario
     this.dynamics = null;     // Dynamics (dramatic stages), set by buildScenario
-    this.fireVisMul = 1;      // smoke sight factor from the fire system
+    // (smoke sight is positional now: FireSystem.smokeMulAt, queried per agent)
     this.shake = 0;           // earthquake camera shake (render-only, decays in Dynamics)
   }
   elapsed() { return this.time - (this.battleT0 || 0); }
@@ -64,6 +64,7 @@ export class World {
   addRegiment(r) { this.regs.push(r); return r; }
   addAgent(a) {
     a.idx = this.agents.length;
+    a.id = a.idx + 1;   // world-local: ai staggering/jitter keyed on a.id must replay per battle, not per process
     this.agents.push(a);
     if (this.agents.length > this.gridNext.length) this.gridNext = new Int32Array(this.gridNext.length * 2);
     a.y = groundHeight(a.x, a.z);
@@ -279,7 +280,8 @@ export class World {
     return best;
   }
   nearestEnemyAnywhere(a, R, sameLevel = false) {
-    R *= this.env.vis * (this.fireVisMul || 1);
+    // sight: weather factor, cut further if the LOOKER stands in fire smoke
+    R *= this.env.vis * (this.fire ? this.fire.smokeMulAt(a.x, a.z) : 1);
     let best = null, bd = R;
     for (const r of this.regs) {
       if (r.team === a.team || r.alive === 0) continue;

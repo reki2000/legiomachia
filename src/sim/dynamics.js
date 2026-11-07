@@ -43,29 +43,71 @@ export class Dynamics {
   }
 
   // ------------------------------------------------------------ flood
+  // Evacuation model: while the water is rising (and afterwards — the flood
+  // stays), a scan every 0.5 s looks at every non-manual regiment. If the
+  // water at its centre is already wading depth (> 0.55 m) against the FINAL
+  // level, the regiment is ordered to the nearest sampled point that stays
+  // dry at the final level and flagged floodEvac, which makes the command
+  // AI leave it alone until its centre is dry again. This replaces the old
+  // one-shot order at flood start, which regiments could be dragged away
+  // from by combat long before the water actually arrived — men drowned in
+  // place because their regiment was still fighting in the channel.
   startFlood(w) {
     const st = w.stage;
     this.flood = { from: st.WL, to: 0.35, t: 0, dur: 30, lastStep: 0 };
+    this.floodFinalWL = 0.35;
+    this.evacT = 0;
     w.emit('flood', {});
-    // regiments standing in the soon-to-be-deep zone are ordered up to the banks
+  }
+  // nearest point near (x, z) that stays dry at the final water level;
+  // searches away from the river first, then along the banks
+  dryPoint(st, x, z) {
+    const rz = st.riverZ(x), side = z >= rz ? 1 : -1, need = this.floodFinalWL + 0.25;
+    const dirs = [[0, side], [0.7, side * 0.7], [-0.7, side * 0.7], [1, 0], [-1, 0], [0, -side]];
+    for (const [dx, dz] of dirs) {
+      for (let d = 12; d <= 110; d += 12) {
+        const px = x + dx * d, pz = z + dz * d;
+        if (st.floorAt(px, pz) > need && Math.abs(pz - st.riverZ(px)) < st.river.half + 90) return { x: px, z: pz };
+      }
+    }
+    return { x, z: rz + side * (st.river.half + 40) };
+  }
+  evacScan(w) {
+    const st = w.stage;
     for (const r of w.regs) {
-      if (r.alive === 0 || r.manual) continue;
-      const depth = st.WL + 0.8 - st.floorAt(r.cx, r.cz);
-      if (depth > 0.4 && Math.abs(r.cz - st.riverZ(r.cx)) < st.river.half + 26) {
-        const side = r.cz >= st.riverZ(r.cx) ? 1 : -1;
-        w.orderMove(r, r.cx, st.riverZ(r.cx) + side * (st.river.half + 34));
+      if (r.alive === 0) continue;
+      const depthFinal = this.floodFinalWL - st.floorAt(r.cx, r.cz);
+      if (r.floodEvac) {
+        // dry again (or shoved back onto a bridge/bank): hand the regiment back
+        if (this.floodFinalWL - st.floorAt(r.cx, r.cz) < 0.15) r.floodEvac = false;
+        continue;
+      }
+      if (r.manual) continue;
+      if (depthFinal > 0.55 && Math.abs(r.cz - st.riverZ(r.cx)) < st.river.half + 30) {
+        const p = this.dryPoint(st, r.cx, r.cz);
+        r.floodEvac = true;
+        w.orderMove(r, p.x, p.z);
       }
     }
   }
   updateFlood(dt) {
-    const f = this.flood, st = this.w.stage;
+    const st = this.w.stage, w = this.w;
+    // evacuation scanning runs from the moment the dam breaks, forever after
+    if (this.floodFinalWL !== undefined && w.phase === 'battle') {
+      this.evacT -= dt;
+      if (this.evacT <= 0) { this.evacT = 0.5; this.evacScan(w); }
+    }
+    const f = this.flood;
     if (!f) return;
     f.t += dt;
     const k = clamp(f.t / f.dur, 0, 1);
     st.WL = f.from + (f.to - f.from) * k;
-    // resample navigation in steps as the water rises (bridges stay dry: their
-    // decks stand above the new level, pontoons are re-floated below)
-    if (k - f.lastStep >= 0.2 || (k >= 1 && f.lastStep < 1)) {
+    // resample navigation as the water rises. The step is 0.05 of the rise
+    // (every 1.5 s of the 30 s rise, 20 steps instead of the old 5) so the
+    // walkable shore moves in small increments instead of jumping; bridges
+    // stay dry (their decks stand above the new level) and pontoons are
+    // re-floated. Still staged, not continuous — see README.
+    if (k - f.lastStep >= 0.05 || (k >= 1 && f.lastStep < 1)) {
       f.lastStep = k;
       for (const p of st.pontoons) if (p.done) st.setRect(p.x - p.width / 2, Math.min(p.z0, p.z0 + p.dir * p.total), p.x + p.width / 2, Math.max(p.z0, p.z0 + p.dir * p.total), (x, z) => Math.max(st.terrain(x, z) + 0.05, st.WL + 0.3), F_PONTOON);
       const X = Math.min(490, 420 * st.S);

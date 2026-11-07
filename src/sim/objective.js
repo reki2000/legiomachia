@@ -13,7 +13,7 @@ const CAPTURE_SECS = 45;        // time to take an undefended point
 const HOLD_LIMIT = 540;         // defenders win by holding out this long (asymmetric stages)
 const RETREAT_NEED = 0.5;       // share of the Legion that must get away
 const RETREAT_LIMIT = 360;
-const ESCORT_LIMIT = 480;       // escort: defenders win by holding the convoy this long
+const ESCORT_LIMIT = 600;       // escort: defenders win by holding the convoy this long (the route is ~500 m ≈ 265 s of pure travel, plus the battle in between)
 const ESCORT_N = 5;             // wagons in the convoy
 
 export class Objective {
@@ -145,7 +145,57 @@ export class Objective {
     }
     this.wagonTotal = this.wagons.length;
     this.wagonEscaped = 0; this.wagonLost = 0;
+    this.repositionEscortArmy();
+    // canyon: also push the Kingdom 50 m further up the pass, so the
+    // convoy's screen can form before the meeting engagement starts
+    if (st.canyon) {
+      for (const r of w.regs) {
+        if (r.team !== 1) continue;
+        r.az += 50; r.cz += 50;
+        for (const a of r.agents) { a.z += 50; if (a.prevZ !== undefined) a.prevZ += 50; a.pz += 50; a.y = w.stage.floorAt(a.x, a.z); }
+      }
+    }
     if (w.command) w.command.setup();
+  }
+  // The scenario deploys the Legion as a battle line facing the Kingdom,
+  // which can leave the convoy starting 200 m behind its own army — the
+  // escorts spent the first minutes marching back while cavalry rode
+  // around the flank and killed wagons. On open stages, translate the
+  // whole Legion (the same trick setupRetreat uses on the Kingdom) so its
+  // centre sits on the convoy; the army then advances with the wagons.
+  // Skipped where solid scenery (forest trees, village houses) could swallow
+  // a shifted regiment.
+  repositionEscortArmy() {
+    const st = this.st, w = this.w;
+    if (!['field', 'hills', 'canyon', 'ambush', 'landslide'].includes(st.id)) return;
+    if (!this.wagons.length) return;
+    let wx = 0, wz = 0;
+    for (const a of this.wagons) { wx += a.x; wz += a.z; }
+    wx /= this.wagons.length; wz /= this.wagons.length;
+    const regs = w.regs.filter(r => r.team === 0 && r.type !== 'wagon');
+    if (!regs.length) return;
+    let cx = 0, cz = 0;
+    for (const r of regs) { cx += r.cx; cz += r.cz; }
+    cx /= regs.length; cz /= regs.length;
+    const cl = v => Math.max(-165, Math.min(165, v));
+    // offset the army 55 m toward the enemy side of the convoy, so the
+    // regiments form a screen ahead of the wagons instead of a crowd
+    // mixed in with them (in the canyon neck that crowd collapsed as one)
+    const canyon = !!st.canyon;
+    const ox = canyon ? 0 : 55, oz = canyon ? 55 : 0;
+    const dx = cl(wx - cx + ox), dz = cl(wz - cz + oz);
+    if (Math.hypot(dx, dz) < 60) return;
+    for (const r of regs) {
+      r.ax += dx; r.az += dz; r.cx += dx; r.cz += dz;
+      if (r.px !== undefined) { r.px += dx; r.pz += dz; }
+      for (const a of r.agents) {
+        a.x += dx; a.z += dz;
+        if (a.prevX !== undefined) a.prevX += dx;
+        if (a.prevZ !== undefined) a.prevZ += dz;
+        a.px += dx; a.pz += dz;
+        a.y = w.stage.floorAt(a.x, a.z);
+      }
+    }
   }
   updateEscort() {
     const ex = this.exitDef || this.wagonExit;

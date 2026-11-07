@@ -1,9 +1,13 @@
 // Fire: trees (burnforest) and city houses/tents (firestorm) can catch fire,
 // spread to neighbours, hurt men nearby and choke the field with smoke.
-// Approximation (documented in README): smoke is a single global sight factor
-// (world.fireVisMul, applied in World.nearestEnemyAnywhere) scaled by how much
-// is burning, instead of a per-position smoke field; a burnt house keeps its
-// standing mesh (the stage renderer is static) but may collapse in the raster.
+// Smoke model (documented in README): positional, not global. Every 0.5 s
+// the burning items are stamped into a coarse 12 m grid (this.smoke, cell
+// key -> sight multiplier 0.4..1). A cell's multiplier worsens with the
+// number and closeness of fires within SMOKE_R; World.nearestEnemyAnywhere
+// scales an agent's sight by the multiplier of the cell the AGENT stands
+// in, so men inside the smoke cannot see out, while distant units are
+// completely unaffected. A burnt house keeps its standing mesh (the stage
+// renderer is static) but may collapse in the raster.
 import { rand } from '../util.js';
 import { isActive } from './agent.js';
 
@@ -11,6 +15,9 @@ const BURN_T = 55;          // seconds a flammable burns before it is spent
 const SPREAD_EVERY = 11;    // seconds between spread attempts per burning item
 const SPREAD_R = 13;        // metres a fire can jump
 const HURT_R = 6, HURT_DPS = 7;
+const SMOKE_R = 30;         // metres smoke drifts from a burning item
+const SMOKE_CELL = 12;      // smoke grid cell size (m)
+const SMOKE_MAX = 0.6;      // worst sight cut inside thick smoke
 
 export class FireSystem {
   constructor(world) {
@@ -24,7 +31,34 @@ export class FireSystem {
     }
     this.burning = 0;
     this.hurtT = 0;
-    world.fireVisMul = 1;
+    this.smoke = new Map();   // cell key -> sight multiplier (see header)
+    this.smokeT = 0;
+  }
+  // sight multiplier for an agent at (x, z): 1 = clear air
+  smokeMulAt(x, z) {
+    const v = this.smoke.get(Math.floor(x / SMOKE_CELL) + ':' + Math.floor(z / SMOKE_CELL));
+    return v === undefined ? 1 : v;
+  }
+  // rebuild the smoke grid from what is burning right now (0.5 s cadence)
+  rebuildSmoke() {
+    const m = new Map();
+    for (const it of this.items) {
+      if (it.state !== 1) continue;
+      const R = SMOKE_R + it.r;
+      const cx0 = Math.floor((it.x - R) / SMOKE_CELL), cx1 = Math.floor((it.x + R) / SMOKE_CELL);
+      const cz0 = Math.floor((it.z - R) / SMOKE_CELL), cz1 = Math.floor((it.z + R) / SMOKE_CELL);
+      for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++) {
+        const px = (cx + 0.5) * SMOKE_CELL, pz = (cz + 0.5) * SMOKE_CELL;
+        const d = Math.hypot(px - it.x, pz - it.z);
+        if (d > R) continue;
+        const density = (1 - d / R) * 0.55;         // one fire: up to 0.55 at its heart
+        const key = cx + ':' + cz;
+        m.set(key, (m.get(key) || 0) + density);
+      }
+    }
+    // convert accumulated density to a sight multiplier per cell
+    for (const [k, v] of m) m.set(k, 1 - Math.min(SMOKE_MAX, v));
+    this.smoke = m;
   }
   // ignite the nearest unburnt flammable within r of (x,z); returns it or null
   ignite(x, z, r = 4) {
@@ -77,8 +111,10 @@ export class FireSystem {
       // flames lick at anyone standing in them
       if (w.fx && rand() < dt * 6) w.fx.dustBurst(it.x, st.floorAt(it.x, it.z) + 1, it.z, 2, 1.6);
     }
-    // smoke: the more burns, the less anyone can see (global approximation)
-    w.fireVisMul = 1 - Math.min(0.45, this.burning * 0.02);
+    // smoke grid at 2 Hz (cheap: a few thousand cell stamps even when a
+    // whole forest is ablaze, and queries are a single Map lookup)
+    this.smokeT -= dt;
+    if (this.smokeT <= 0) { this.smokeT = 0.5; this.rebuildSmoke(); }
     // damage tick, once a second
     this.hurtT -= dt;
     if (any && this.hurtT <= 0) {

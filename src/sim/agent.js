@@ -9,7 +9,10 @@ import {
 import { allocMount } from './mounts.js';
 
 export const S_ALIVE = 0, S_DOWN = 1, S_GETUP = 2, S_DEAD = 3, S_GONE = 4;
-let nextId = 1;
+// NOTE: there is deliberately no module-level id counter here. Agent.id is
+// assigned by World.addAgent (world-local, = idx + 1) because ai.js uses
+// a.id for think staggering and steering jitter: a process-global counter
+// made the second battle in a process diverge from the first.
 
 export function isActive(a) {
   return (a.state === S_ALIVE || a.state === S_GETUP) && !a.riderless;
@@ -19,7 +22,7 @@ export class Agent {
   constructor(team, type, reg, quality = 0.5) {
     const T = TYPES[type];
     this.T = T; this.type = type; this.kind = T.kind;
-    this.id = nextId++; this.idx = -1;
+    this.id = 0; this.idx = -1;   // id assigned by World.addAgent (see note above)
     this.team = team; this.reg = reg; this.slot = 0;
     this.x = 0; this.z = 0; this.y = 0; this.vx = 0; this.vz = 0; this.heading = 0;
     this.prevX = 0; this.prevZ = 0;
