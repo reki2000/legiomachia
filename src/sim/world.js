@@ -15,6 +15,7 @@ import { PROJ } from './projectiles.js';
 import { computeMount, computeCrew } from './mounts.js';
 import { Agent, Regiment, isActive, S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE } from './agent.js';
 import * as AI from './ai.js';
+import { StageEvents } from './stageEvents.js';
 
 export { Agent, Regiment, isActive, S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE };
 
@@ -47,7 +48,15 @@ export class World {
     this.debris = [];
     this.landing = null;      // men still at sea (harbour landing, landing.js)
     this.ended = false;
+    this.seed = 7;
+    this.difficulty = 'normal'; // enemy AI difficulty (command.js); 'normal' = pre-existing behaviour
+    this.stageEvents = new StageEvents(this); // timed stage events (flood, rockfall, ...)
+    this.fire = null;         // FireSystem (burnforest / firestorm), set by buildScenario
+    this.dynamics = null;     // Dynamics (dramatic stages), set by buildScenario
+    this.fireVisMul = 1;      // smoke sight factor from the fire system
+    this.shake = 0;           // earthquake camera shake (render-only, decays in Dynamics)
   }
+  elapsed() { return this.time - (this.battleT0 || 0); }
   on(fn) { this.listeners.push(fn); }
   emit(type, data) { for (const f of this.listeners) f(type, data); }
 
@@ -172,6 +181,9 @@ export class World {
     }
     if (this.command) this.command.update(dt);
     if (this.objective) this.objective.update(dt);
+    this.stageEvents.update(dt);
+    if (this.fire) this.fire.update(dt);
+    if (this.dynamics) this.dynamics.update(dt);
     for (const r of this.regs) if (r.order !== 'dead') AI.updateRegiment(this, r, dt);
     if (this.engineering) this.engineering.update(dt);
     if (this.landing) this.landing.update(dt);
@@ -266,7 +278,7 @@ export class World {
     return best;
   }
   nearestEnemyAnywhere(a, R, sameLevel = false) {
-    R *= this.env.vis;
+    R *= this.env.vis * (this.fireVisMul || 1);
     let best = null, bd = R;
     for (const r of this.regs) {
       if (r.team === a.team || r.alive === 0) continue;
@@ -309,9 +321,23 @@ export class World {
   }
 
   // ------------------------------------------------------------- movement
+  // how much the ground under a bogs it down: marsh mud punishes weight — heavy
+  // mounts and engines sink, light infantry and dogs barely notice
+  groundDrag(a) {
+    const st = this.stage;
+    let drag = 0;
+    const mud = st.mudAt ? st.mudAt(a.x, a.z) : 0;
+    if (mud > 0) {
+      const heavy = a.kind === K_INF || a.kind === K_DOG ? (a.T.armorHeavy ? 0.55 : 0.3) : a.kind === K_CAV ? 0.75 : 1;
+      drag = Math.max(drag, mud * heavy);
+    }
+    return drag; // 0..1 fraction of speed lost
+  }
   maxSpeed(a) {
     const T = a.T;
     let v = (T.run || T.max) * a.runMul * (0.62 + 0.38 * a.stamina);
+    v *= 1 - 0.62 * this.groundDrag(a);
+    if (this.stage.iceAt && this.stage.iceAt(a.x, a.z)) v *= 0.92; // ice: surer to slide than to hurry
     if (a.swimming) v = 0.9;
     else if (a.climbing) v = Math.min(v, 1.1);
     else if (this.stage.hasWater && this.stage.WL - a.y > 0.3) v *= 0.55;
@@ -330,7 +356,8 @@ export class World {
     const dl = Math.hypot(dvx, dvz);
     if (dl > lim) { dvx *= lim / dl; dvz *= lim / dl; }
     let ax = dvx - a.vx, az = dvz - a.vz;
-    const l = Math.hypot(ax, az), maxA = (a.kind === K_DOG ? 14 : 9) * dt;
+    const ice = this.stage.iceAt && this.stage.iceAt(a.x, a.z);
+    const l = Math.hypot(ax, az), maxA = (a.kind === K_DOG ? 14 : 9) * (ice ? 0.55 : 1) * dt;
     if (l > maxA) { ax *= maxA / l; az *= maxA / l; }
     a.vx += ax; a.vz += az;
     if (this.stage.stakes.length && ((a.id + this.stepN) & 3) === 0) {
@@ -350,10 +377,13 @@ export class World {
     a.prevX = a.x; a.prevZ = a.z;
     const T = a.T;
     const sp0 = Math.hypot(a.vx, a.vz);
-    const turn = T.turn * (sp0 < 3 ? 1.6 : 1) * dt;
+    const onIce = this.stage.iceAt && this.stage.iceAt(a.x, a.z);
+    const turn = T.turn * (sp0 < 3 ? 1.6 : 1) * (onIce ? 0.5 : 1) * dt; // cavalry cannot wheel on ice
     a.heading = wrapAngle(a.heading + clamp(wrapAngle(a.dh - a.heading), -turn, turn));
     const fx = Math.sin(a.heading), fz = Math.cos(a.heading);
     let spd = a.dspd;
+    spd *= 1 - 0.68 * this.groundDrag(a);
+    if (onIce) spd = Math.min(spd * 1.02, T.max || spd);
     if (a.swimming) spd = Math.min(spd, 1.5);
     else if (this.stage.hasWater && this.stage.WL - a.y > 0.3) spd *= 0.6;
     const tvx = fx * spd, tvz = fz * spd;
@@ -760,7 +790,7 @@ export class World {
     if (this.fx) this.fx.blood(t.x, t.y + 1.2, t.z, dx * 1.5, dz * 1.5, dmg > 40 ? 8 : 4);
     this.moraleHit(t, -0.02);
     if (t.hp <= 0) {
-      if (att) { this.kills[att.team]++; if (att.kind === K_INF) att.morale = Math.min(1.2, att.morale + 0.04); }
+      if (att) { this.kills[att.team]++; att.kills = (att.kills || 0) + 1; if (att.kind === K_INF) att.morale = Math.min(1.2, att.morale + 0.04); }
       const r = rand();
       if (r < 0.3) this.killInf(t, t.vx * 0.3, 0, t.vz * 0.3, dx * 0.5, 0, dz * 0.5, 0.2);
       else if (r < 0.8) this.killInf(t, t.vx * 0.4, 0.5, t.vz * 0.4, dx * force, 0.4, dz * force, 0.7);
@@ -1042,6 +1072,7 @@ export class World {
         if (g.hp <= 0 && this.engineering) this.engineering.breakGate(g);
       }
     }
+    if (this.fire && rand() < 0.45) this.fire.ignite(x, z, 5);
     if (this.fx) { this.fx.dustBurst(x, y + 0.3, z, 16, 2.2); if (st.hasWater && st.WL > y - 0.2) this.fx.splash(x, st.WL, z, 12); }
     this.spawnDebris(x, y + 0.4, z, 5, 0.25, st.floorAt(x, z) > 3 ? 0x8a8478 : 0x6a5a40);
     this.emit('rock', { x, z });
