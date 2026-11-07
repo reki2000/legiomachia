@@ -103,7 +103,7 @@ The UI text is in Japanese.
 
 ## Background music
 
-The music is procedural too (no assets), and it is scored per stage family: `src/tracks.js` holds a track for each family — field, river, harbour and siege — each with its own key centre, bass line, drum feel and lead phrases in the same D phrygian-dominant world, while `src/music.js` is the engine that schedules and mixes them. The battle seed picks the track's variation (phrase order and ornament), so the same stage does not always sound identical.
+The music is procedural too (no assets), and it is scored per stage family: `src/tracks.js` holds a track for each family — field, river, harbour, siege and forest — all in the same D phrygian-dominant world but each with its own tempo, bass line, drum feel and lead phrases, while `src/music.js` is the engine that schedules and mixes them. The battle seed picks the track's variation (phrase order and ornament), so the same stage does not always sound identical.
 
 Intensity is continuous, not a calm/battle switch: a level is eased toward the battle's current intensity (how much of the two armies is engaged), so the drums, bass and lead thicken as the lines meet and thin out again in a lull. Short stingers mark the moments that matter — a gate breaking or reinforcements arriving throw the song into its climax under a drum roll, a general's death ducks the drums and drops it into the bridge — and a win or lose jingle closes the battle. Alongside the bass, war drums and lead, the newer tracks add a plucked lyre, a chant pad and a frame drum.
 
