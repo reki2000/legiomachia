@@ -1,16 +1,8 @@
 # Legiomachia
 
-An ancient battle simulator in the browser (WebGL / three.js, plain JavaScript).
+Ancient-to-gunpowder battle simulator in the browser (WebGL / three.js, plain JavaScript, no build-time assets).
 
 **Live demo: https://reki2000.github.io/legiomachia/**
-
-Infantry, cavalry, war elephants, chariots, camels, war dogs and siege engines march, charge and crash into each other — with low-poly visuals and an emphasis on believable human motion.
-
-![Open field battle](docs/field.png)
-
-| River crossing | Siege |
-|---|---|
-| ![River crossing](docs/river.png) | ![Siege](docs/siege.png) |
 
 ```
 npm install
@@ -18,67 +10,101 @@ npm run dev        # http://localhost:5173/
 npm run build      # static build in dist/
 ```
 
-URL parameters: `?stage=field|hills|forest|canyon|river|ford|bridge|harbor|siege|camp|marsh|village|ambush|frozen|flood|firestorm|landslide|naval|burnforest`, `?weather=clear|fog|rain|snow|dusk|night`, `?mode=annihilate|capture|reinforce|retreat|escort`, `?cam=cine|free|follow|overview`, `?size=S|M|L|XL|XXL`, `?seed=<number>`, `?diff=easy|normal|hard`, `?autostart=<seconds>`
+![Open field battle](docs/field.png)
 
-The seed can also be typed into the seed input in the control panel (the same value as `?seed=`), and the enemy AI difficulty chosen in the difficulty select (`?diff=easy|normal|hard`). Difficulty changes only the enemy command — how often its wings re-plan, when it commits its reserves, and how strongly its commanders' morale auras count — never unit stats or numbers; *normal* is the original behaviour. A battle with the same stage, size, mode and seed deploys identically, so a seed is enough to share a battle by URL.
-
-## Stages
-
-| Stage | Description |
+| River crossing | Siege |
 |---|---|
-| Open field | A pitched battle. Engineers drive anti-cavalry stakes before the fighting starts. |
-| Hills | Two round hills flank the field. The high ground hits harder and uphill is slow going; each side's missile troops start on a hill. |
-| Forest | Woods across the middle, every tree a solid block: men walk around them and arrows stop in them. Only a few lanes and glades are open, so the armies funnel through. |
-| Canyon | Sheer cliffs close to a narrow neck. Formations form up narrower and deeper. |
-| River crossing | A stone bridge, a wooden bridge and a ford. Regiments funnel into columns to cross. Defending engineers can destroy the wooden bridge, attacking engineers build a pontoon bridge. Men pushed into the river swim or drown. |
-| Ford | Shallows all along the river, with a few deep pools. No bridges. |
-| Broken bridge | Deep water and a single wooden bridge that the defenders tear down as the attackers approach; two pontoon sites. |
-| Harbour | A landing: the Legion starts aboard transports anchored off the beaches either side of a port. Rowed boats ferry the men ashore a boatload at a time, flat boats bring the horses; each wing forms up on the beach until its last men have landed, while the Kingdom's archers shoot from the quays. Open sea to the south, a stone-quayed basin closed by a mole with a lighthouse, warehouses and a town behind; the basin splits the attack in two. Men pushed off the quay drown; routed legionaries wade out to the boats. |
-| Siege | A walled city with towers, a gate and houses. A battering ram breaks the gate, engineers carry and raise ladders, onagers hurl rocks at the walls. Defenders push ladders down; reserves inside the city fight at the breach. |
-| Camp raid | A palisaded army camp: lower, smaller, tents instead of houses; the same ladders, ram and gate. |
-| Marsh | A ford river whose banks and shallows are patched with deep mud. Mud slows everyone, but weight decides how much: heavy cavalry, elephants and siege engines sink and crawl, armoured foot slog, and light infantry and dogs barely notice. |
-| Village | Houses and fences around a village square, on open ground. Houses block movement and arrows exactly like the forest's trees; the low fences must be gone around. The square is the capture point in *capture* mode. |
-| Ambush in the pass | The Legion marches through the canyon in a long column; the Kingdom waits on both slopes above the neck — missile troops shooting down into the column, heavy foot ready to drop into the pass — and springs the trap as the head of the column arrives. |
-| Frozen river | The river crossings under a sheet of ice. Cavalry cannot wheel on the ice (their turn rate is halved) and everything slides a little; the ice cracks under the heaviest units — elephants and siege engines — and dumps them into the water. The bridges stand above the ice as usual. |
-| The dam breaks | Mid-battle the upstream dam breaks (at T ≈ 225–255 s, jittered by the battle seed; a warning sounds 30 s before). The water rises 0.8 m over 30 s: the ford becomes deep water, and regiments standing in the channel are ordered up to the banks. Bridges and pontoons stay above the new level. |
-| The burning city | A siege in which fires keep breaking out among the houses — the first with the opening bombardment, then roughly one every 50 s. Fire spreads from house to house, hurts men standing in it, and the smoke cuts everyone's sight. |
-| The collapsing pass | An earthquake mid-battle (the camera shakes with the rumble) drops a rockfall across the canyon neck, crushing anyone caught underneath and sealing the pass. Engineers can clear the rubble and reopen it. |
-| Naval boarding | The harbour landing, plus two Kingdom war galleys that row in from the sea, berth just off the beaches either side of the basin mouth, throw a gangplank ashore and loose their marines into the landing's flank. |
-| Fire attack in the forest | The forest battle, but the trees can burn: onager rocks can ignite them, and engineers have an ignite task (火を放つ). Fire spreads tree to tree, and a burnt-out tree stops blocking movement and arrows, so the woods open up as the battle goes on. |
+| ![River crossing](docs/river.png) | ![Siege](docs/siege.png) |
 
-**Weather** (`?weather=`): fog and night shorten sight, rain slows the march and spoils aim, snow (雪) slows the march and spoils aim like rain under a pale sky, dusk is just for looks.
+## URL parameters
 
-**Victory conditions** (`?mode=`): *annihilate* (default); *capture* a flag (the defenders win by holding out); *reinforce* (fresh regiments arrive mid-battle, including a relief force behind the besiegers); *retreat* (open ground only: get half the Legion off the field before time runs out while the Kingdom's army is on its heels); *escort* (輜重護衛, open-ground stages: a train of supply wagons must cross the field — the Legion wins if at least half the wagons exit the far side, the Kingdom wins if at least half are destroyed or the time runs out).
+| Param | Values |
+|---|---|
+| `stage` | `field` `hills` `forest` `canyon` `bridge` `harbor` `siege` `marsh` `village` `ambush` `frozen` `flood` `firestorm` `landslide` `naval` `burnforest` |
+| `weather` | `clear` `fog` `rain` `snow` `dusk` `night` |
+| `mode` | `annihilate` (default) `capture` `reinforce` `escort` |
+| `era` | era pack id for both armies (below); default `rome` |
+| `era0` / `era1` | per-army pack override (dream matchup) |
+| `scenario` | `nightraid` (Japan pack, siege) |
+| `size` | `S` (~800) `M` (~2,000) `L` (~4,500) `XL` (~10,000) `XXL` (~20,000) |
+| `cam` | `cine` (default) `free` `overview` |
+| `seed` | number; same stage/size/mode/era/seed reproduces the same battle (determinism, below) |
+| `diff` | `easy` `normal` (default) `hard` — enemy command only (reaction interval, reserve timing, aura strength), never unit stats; panel-less, URL only |
+| `autostart` | seconds until the battle starts |
 
-The world is a height field plus a raster of man-made floors: walls are plateaus, ladders are steep ramps and bridges are causeways over water.
-Pathfinding uses A* on a 2 m grid with connected-component checks, so impossible routes fail instantly. Regiments snake along their path and automatically narrow into columns in tight passages.
+Removed values fall back, never silently to field: `stage=camp` → `siege`, `stage=ford` / `river` → `bridge`, `mode=retreat` → `annihilate`, `cam=follow` → `cine`.
 
-## Units and weapons
+## Stages (16)
 
-- **Infantry**: sword, axe (breaks shields), mace (knocks men down), spear, pike/sarissa (deadly to cavalry, weak once an enemy is inside its reach), javelins (three throws, then melee), sling (whirled overhead), bow (volleys and aimed shots), crossbow (powerful, slow to reload), engineers (stakes, ladders, pontoons, bridge demolition)
-- **Mounted and animals**: cavalry (charge, withdraw, charge again), cataphracts (barded horses), horse archers (circle at range, turn in the saddle to shoot), camel riders (horses fear them), war elephants (can panic and trample their own side), scythed chariots, war dogs (bite and drag men down)
-- **Siege engines**: covered battering ram pushed by its crew, onager whose rocks throw bodies around the impact point
+| Stage | Notes |
+|---|---|
+| field 平原 | Pitched battle; engineers plant stakes first. |
+| hills 丘陵 | High ground hits harder, uphill is slow; missile troops start on the hills. |
+| forest 森 | Every tree blocks movement and arrows; a few lanes funnel the armies. |
+| canyon 峡谷 | Cliffs close to a narrow neck; formations deepen. |
+| bridge 落橋 | Deep water, one wooden bridge the defenders demolish; two pontoon sites. |
+| harbor 港 | Landing from transports and ferry boats against a defended port town. |
+| siege 攻城 | Walled city: ram vs gate, ladders, onagers; reserves fight at the breach. |
+| marsh 沼地 | Mud slows by weight: engines and elephants crawl, light foot barely notices. |
+| village 村落 | Houses and fences around a square (the capture point in `capture`). |
+| ambush 峠の伏撃 | A marching column in the canyon, ambushers on both slopes. |
+| frozen 凍河 | Ice halves cavalry turn rate, slides everything, cracks under elephants and engines. |
+| flood 決壊洪水 | Dam breaks mid-battle (warning 30 s prior); water rises 0.8 m, regiments evacuate to the banks. |
+| firestorm 燃える都 | Siege with fires breaking out among the houses (~every 50 s). |
+| landslide 崩れる峠 | Earthquake drops a rockfall across the pass; engineers can clear it. |
+| naval 海戦 | Harbour landing plus two galleys that berth and loose their marines. |
+| burnforest 火攻めの森 | Forest whose trees burn and stop blocking once burnt out. |
+
+Weather effects: fog/night shorten sight, rain/snow slow the march and spoil aim, dusk is looks only.
+
+Victory modes: `annihilate`; `capture` (hold the flag); `reinforce` (fresh regiments arrive mid-battle); `escort` （輜重護衛， open-ground stages — at least half the wagons must exit the far side before the 600 s limit; the limit is the measured break-even of route length vs convoy pace under fire).
+
+The world is a height field plus a raster of man-made floors (walls are plateaus, ladders steep ramps, bridges causeways). Pathfinding is A* on a 2 m grid with connected-component checks; regiments narrow into columns in tight passages.
+
+## Era packs (15)
+
+`src/eras/` — a pack swaps factions, unit/weapon tables, deployments, stage reskins and the BGM track. China and Europe are three eras each, every era reusing the previous one plus its difference. Firearms stop at matchlock level.
+
+| Pack | id | Contents |
+|---|---|---|
+| 古代ローマ | `rome` | The default game: Legion vs Eastern Kingdom. Identity pack — the snapshot baseline is this battle. |
+| ギリシャ vs ペルシャ | `greece` | Phalanx (front-strong/flank-weak arc rule), Spartans, peltasts; Persia: spear masses + Immortal bowmen. Scenario: テルモピュライ (canyon, Persian waves). |
+| カルタゴ | `carthage` | 8 war elephants a side, Numidian javelin horse, camels; desert reskin; Cannae flank-swing hook. |
+| 日本・戦国 | `japan` | 足軽槍， 侍， 弓， 鉄砲 (long range, rank rotation, gunshot morale shock), 薙刀， 騎馬侍. Castle siege reskin （天守）, 夜襲 scenario. BGM: 都節音階. |
+| 中国 CN1 戦国〜漢 | `china-early` | Chariots as the star arm, 戟/戈， massed crossbow, heavy infantry; 函谷関 = canyon. |
+| 中国 CN2 三国〜唐 | `china-mid` | + 連弩， 火矢 (igniting arrows), heavy cavalry. 火船・赤壁： fire ships on the naval stage. |
+| 中国 CN3 宋〜元明 | `china-late` | + 火槍， 火砲， 火箭， 回回砲 (counterweight trebuchet). The Song-vs-Mongol era; Ming relief in the Imjin preset. |
+| 欧州 EU1 中世前期 | `europe-early` | Vikings folded in: shield wall, berserkers, huscarls, Norman proto-knights; landing raid (harbor), Hastings-style hills. |
+| 欧州 EU2 中世盛期 | `europe-mid` | Knights with couched-lance first-charge (×2.2, 20 s re-couch), squires, trebuchets, siege towers, stone-castle siege. |
+| 欧州 EU3 中世後期 | `europe-late` | Longbows (range 215), handgonnes, Swiss pike, early cannon; 泥の弓戦 (marsh: defender longbows behind wet ground). |
+| モンゴル | `mongol` | Horse archers with feigned-retreat kiting (melee pursuers only), lancers, heavy cavalry, borrowed onagers. 元寇・神風： vs Japan on harbor/naval, a typhoon at 420 s. |
+| 朝鮮 | `korea` | Bow-centric army, 勝字銃筒， 火車， 義兵 militia; 亀甲船 = naval-defence hook (shore battery + cannonade). Imjin presets: vs `japan`, Ming relief = `china-late`. |
+| オスマン vs ビザンツ | `ottoman` | Janissary guns, Sipahi, giant bombard (range 380); Greek fire (26 m igniting projector). コンスタンティノープル = siege at full stretch. |
+| インド | `india` | 10 war elephants a side (temperament-driven panic chains), chariots, Rajputs; monsoon hook at 300 s. |
+| コンキスタドール vs アステカ | `aztec` | Few steel elites + arquebus + cavalry + dogs vs macuahuitl mass (high damage, ×0.45 vs armour) with fanatical morale; unknown-weapon shock ×2.2 against the Aztec side; lake city = harbor. |
+
+BGM: one track per pack (pentatonic ×3 for China, Dorian ×3 for Europe, miyako-bushi for Japan, raga phrases for India, …) over the five family tracks (field/river/harbor/siege/forest).
+
+## Units and weapons (base pack)
+
+- Infantry: sword, axe (breaks shields), mace (knocks down), spear, pike (anti-cavalry, weak inside its reach), javelins (3 throws), sling, bow, crossbow, engineers (stakes, ladders, pontoons, demolition, ignite, rubble clearing)
+- Mounted/animals: cavalry, cataphracts, horse archers (circle and shoot), camels (horses fear them), war elephants (can panic), scythed chariots, war dogs
+- Engines: battering ram, onager
 
 ## Individual soldiers
 
-Every soldier is generated with their own build, strength, speed, vitality, defensive skill and courage, plus a name. The unit's quality (levy to veteran) shifts the averages.
+Every soldier is generated, not cloned:
 
-- Changing during battle: HP, stamina (drained by running and fighting, recovered by resting) and morale.
-- Morale drops when nearby comrades die, when attacked from behind, near elephants, with casualties and fatigue. It is supported by nearby leaders.
-- A soldier out of morale flees on their own and may rally once safe. When more than half a regiment flees it routs, and panic spreads to neighbouring units.
-- Exhausted men in the front rank swap places with fresh men from the rear.
+- Stats: build, strength, speed, vitality, defence, courage; unit quality shifts the averages. HP, stamina and morale change during battle.
+- One trait each （勇敢/臆病/狂戦士的/老練/忠実/なし）: shifts flee thresholds and rallying; veterans emit a small morale aura; the loyal hold near a living standard.
+- Buddies: adjacent pairs in foot regiments; a buddy's death triggers rage-charge or collapse, weighted by trait, and enters the results timeline.
+- Looks: regiment shield emblems, hair/beard variants, crest sizes, shoulder/belly variation, ~10% left-handed (pose mirrored, hit tests untouched), nicknames (some drive the look: 隻眼 → eyepatch). Armour darkens in grime/blood steps as HP falls; the wounded limp (asymmetric gait), the heavily wounded may drop their weapon.
+- Attack style per man: overhead / thrust / shield-bash ratios.
+- Animals: per-animal temperament (calm / nervous / bold) drives elephant panic, horse camel/fire fear and flight; horses get coat markings (socks, blaze, spots), elephants tusk/size variation, some dogs fight on after their handler dies; idle animals graze and paw the ground.
 
 ## Chain of command
 
-General → wing commanders (left, centre, right, reserve, …) → regiment captains and standard bearers.
-
-- Commanders ride behind their troops and support the morale of nearby regiments.
-- When a general or commander falls, morale collapses across their command and the AI reacts more slowly.
-- A fallen captain or standard shakes the regiment. Another soldier picks up a fallen standard and raises it again.
-- Player orders to a regiment whose superiors are dead arrive late by messenger (shown as "伝令中" in the UI).
-- The AI is hierarchical too: the general decides when to commit reserves, wing commanders share out targets among their regiments, and cavalry swings around the flank before charging.
-
-In the army tree on the left, clicking a commander selects every regiment under them. Clicking a soldier shows their name and stats.
+General → wing commanders → captains / standard bearers. Commanders support nearby morale; a fallen general slows his army's AI and collapses morale; fallen standards are picked up again; orders to regiments whose superiors are dead arrive late by messenger （伝令中）. The AI is hierarchical on both sides (reserve timing at general level, target sharing inside wings, cavalry swings wide). Own-side AI is always on; a regiment you order by hand leaves the AI (`manual`) until you hand it back.
 
 ## Controls
 
@@ -86,100 +112,84 @@ In the army tree on the left, clicking a commander selects every regiment under 
 |---|---|
 | WASD / arrows, Q/E, R/F, wheel | Pan, rotate, tilt, zoom |
 | Middle drag / Alt + left drag | Orbit |
-| Left click / drag | Select regiments (Shift to add); clicking a soldier shows their stats |
-| Right click | Move; on an enemy: attack (archers shoot); right drag sets facing |
-| Right click with engineers selected | River → pontoon, bridge → demolish, wall → ladder, ground → stakes |
+| Left click / drag | Select regiments (Shift adds); click a soldier for their card (stats, trait, buddy) |
+| Right click | Move; on an enemy: attack; right drag sets facing |
+| Right click, engineers selected | River → pontoon, bridge → demolish, wall → ladder, ground → stakes |
 | H / V / C / X / B | Hold / advance / charge / fire / fall back |
-| Panel buttons | Formation (tight / normal / loose; tight resists arrows), engineer tasks, hand back to AI. Engineer tasks also include ignite (火を放つ, where trees or houses can burn) and clear rubble (瓦礫除去, where a rockfall blocks the way) |
-| Enter / Space / Z | Start battle / pause / slow motion |
-| 1 / 2 / 3 / 4, T | Camera: free / follow / cinematic / overview (a high view drifting from one crowd to the next; always used before the battle starts); follow the soldier under the cursor. The cinematic camera cuts to a general or wing commander in danger. |
-| M | Toggle the background music |
-| Minimap click / drag | Jump the free camera to that point of the field (the minimap in the corner shows both armies as dots, the objective, escort wagons and the camera target) |
-| Touch | One-finger drag pans, pinch zooms (and twists to rotate), tap selects a regiment or a soldier |
+| Enter / Space / Z | Start / pause / slow motion |
+| 1 / 3 / 4, T | Camera free / cinematic / overview; T tracks a soldier (the rig's internal follow mode — no longer a menu camera) |
+| M | BGM on/off |
+| Minimap click / drag | Jump the free camera there |
+| Touch | 1-finger drag pans, pinch zooms/twists, tap selects |
 
-A performance overlay (性能表示 in the control panel: FPS, simulation and draw time, survivors) can be toggled from the control panel. When a battle ends, the results panel shows the outcome and its seed and difficulty, each army's starting strength, survivors and losses, the battle's most distinguished soldier (殊勲者), a per-regiment survivors table and a timeline of the battle, with buttons to rematch with the same seed, copy this battle's URL, or close the panel.
-
-The UI text is in Japanese.
+HUD panels (status, controls, army tree, selection, soldier card, minimap, perf HUD, help) each close with a × button and reopen from the slim launcher on the left edge; state persists in localStorage. Help starts minimized; on narrow/portrait screens the tree starts closed. Engineer task buttons auto-collapse while the camera is cinematic/overview. A perf overlay （性能表示） shows FPS, step/draw time and the adaptive quality level (Q0–Q3). The results panel shows outcome, per-army losses, 殊勲者， per-regiment survivors, a timeline (including buddy events), and rematch / share-URL buttons.
 
 ## Background music
 
-The music is procedural too (no assets), and it is scored per stage family: `src/tracks.js` holds a track for each family — field, river, harbour, siege and forest — all in the same D phrygian-dominant world but each with its own tempo, bass line, drum feel and lead phrases, while `src/music.js` is the engine that schedules and mixes them. The battle seed picks the track's variation (phrase order and ornament), so the same stage does not always sound identical.
-
-Intensity is continuous, not a calm/battle switch: a level is eased toward the battle's current intensity (how much of the two armies is engaged), so the drums, bass and lead thicken as the lines meet and thin out again in a lull. Short stingers mark the moments that matter — a gate breaking or reinforcements arriving throw the song into its climax under a drum roll, a general's death ducks the drums and drops it into the bridge — and a win or lose jingle closes the battle. Alongside the bass, war drums and lead, the newer tracks add a plucked lyre, a chant pad and a frame drum.
+Procedural (no assets). `src/music.js` is the engine; `src/tracks.js` holds the data: five family tracks + one per era pack, all rooted on D. Intensity is continuous — a level eased toward how much of the armies is engaged thickens drums/bass/lead; stingers throw the song into its climax (gate broken, reinforcements) or its bridge (a general falls); win/lose jingles close the battle. The seed picks the track variation.
 
 ## Scale and performance
 
-- Battle sizes range from S (~800) to XXL (~20,000).
-- Battles with more than 6,000 bodies step the simulation at 30 Hz.
-- Rendering uses three levels of detail: distant soldiers re-pose less often, and settled corpses are moved into a static buffer.
-- Simulation cost per step in Node: about 2–4 ms for M (~2,000 soldiers), about 15 ms for XL (~9,500) and about 30 ms for XXL (~18,000). XXL is experimental and heavy once rendering is included.
+- Sizes S (~800) to XXL (~20,000). Over 6,000 bodies the simulation steps at 30 Hz.
+- Three render LODs; distant soldiers re-pose less often; settled corpses move to a static buffer. Adaptive quality steps pixel ratio and pose skip down (Q0→Q3) when FPS sags.
+- Sim cost per step in Node: ~2–4 ms (M), ~15 ms (XL), ~30 ms (XXL, experimental).
 
 ## How the motion works
 
-- **Procedural animation** (`src/anim/human.js`): an 18-joint skeleton posed every frame.
-  - Stride and gait phase follow the actual speed, so feet do not slide.
-  - Arms and legs are solved with two-bone IK.
-  - Attacks, blocks, draws, throws, climbing, carrying and swimming are blended from keyframed curves.
-- **Ragdolls** (`src/sim/ragdoll.js`): the same joints switch to position-based physics when a soldier dies or is knocked down. Survivors blend back into a get-up animation.
-- **Quadrupeds** (`src/anim/quadruped.js`): one parametric rig for horses, camels and dogs, with walk-to-gallop phase blending and rearing, plus a separate elephant rig.
-- **Impacts** (`src/sim/world.js`): mounts use capsule collision. Impact strength depends on mass ratio and closing speed, and heavy bodies lose momentum as they plough through. Braced spear and pike men can impale charging horses.
+- Procedural animation (`src/anim/human.js`): 18-joint skeleton, stride follows real speed (no foot sliding), two-bone IK, keyframed attacks/blocks/throws/climbing/swimming.
+- Ragdolls (`src/sim/ragdoll.js`): the same joints switch to PBD physics on death/knockdown; survivors blend into a get-up.
+- Quadrupeds (`src/anim/quadruped.js`): one parametric rig (horse/camel/dog) with walk–gallop blending, plus an elephant rig.
+- Impacts (`src/sim/world.js`): capsule collision, momentum by mass ratio and closing speed; braced spears can impale charging horses.
+
+## Determinism
+
+Same stage/size/mode/era/seed → identical battle, guaranteed and tested. All simulation randomness runs through the seeded PRNG in `src/util.js`; `Math.random()` survives only as `cosmeticRand` in render/audio paths that cannot feed back (camera shake, colour jitter). Agent ids are world-local, so repeated battles inside one process also match and tool sweeps are order-independent. `npm test` pins the field/S/seed-7 snapshot against `tools/baseline.json` (±3).
+
+## Fire and smoke
+
+Fire (`src/sim/fire.js`) ignites, spreads and burns out per prop/tree. Smoke is **positional**: every 0.5 s the fire system stamps burning items into a 12 m grid, and a looker's sight range is scaled by the worst smoke cell at his position (×0.40 inside the smoke, ×1.0 clear of it) — there is no global sight factor.
 
 ## Code layout
 
 ```
 src/
-  main.js             boot, UI (army tree, soldier card, orders, results panel), main loop
-  camera.js           RTS camera, follow camera, cinematic director (including pulled-back wide shots)
-  terrain.js          height API (backed by the stage), terrain / water / scenery meshes
-  scenario.js         army deployments and chain of command per stage
-  sound.js            procedural WebAudio sound effects (no assets)
-  weather.js          sky, fog, light, rain, snow and stars for each weather, and its effect on the battle
-  music.js            procedural background music engine (scheduler and instruments)
-  tracks.js           per-family BGM tracks, seed variations, stingers and jingles (data for music.js)
-  minimap.js          minimap canvas: army dots, capture point, camera view, click to jump
-  anim/human.js       procedural human animation
-  anim/quadruped.js   horse / camel / dog rig and the elephant
-  sim/stage.js        stages: terrain, structure raster, bridges, ladders, gate, stakes, forest, marsh mud, ice, village, galleys
-  sim/nav.js          navigation grid, A*, connected components, clearance
-  sim/agent.js        soldiers (stats, morale, stamina) and regiments (path-following formations)
-  sim/world.js        update loop, collisions and impacts, falls and water, order API
-  sim/combat.js       melee and missile resolution (extracted from world.js)
-  sim/ai.js           regiment and individual behaviour
-  sim/objective.js    victory conditions: capture, reinforcements, retreat, escort
-  sim/command.js      chain of command, morale auras, hierarchical AI, stage plans
-  sim/engineering.js  engineer tasks and siege engines
-  sim/landing.js      harbour landing: transports, boats ferrying men and horses ashore
-  sim/projectiles.js  arrows, javelins, sling stones, bolts, onager rocks
-  sim/ragdoll.js      PBD ragdoll aware of structures and water
-  sim/stageEvents.js  timed stage events scheduled in battle-elapsed seconds (dam break, rockfall, ...)
-  sim/fire.js         fire: ignition, spread, burn damage and the smoke sight factor
-  sim/dynamics.js     dramatic stage dynamics: flood, landslide, cracking ice, naval galleys, city fires
-  render/*            instanced rendering of bodies, structures and particles
-tools/                headless checks: bench.mjs / density.mjs (Node simulation), battle.mjs / ui.mjs (browser screenshots and UI tests), balance.mjs (win-rate sweep), test.mjs (deterministic snapshot, run by npm test), ui-check.mjs (self-contained browser UI verification)
+  main.js             boot, UI (tree, soldier card, orders, results, panels), main loop
+  camera.js           free / cinematic / overview rig (+ internal follow for T)
+  terrain.js          height API, terrain / water / scenery meshes
+  scenario.js         deployments and chain of command per stage
+  eras/               era packs: index.js (registry, composeEra), per-pack files, deploy.js helpers
+  sound.js            procedural WebAudio SFX        music.js / tracks.js  BGM engine / data
+  weather.js          sky, fog, light, precipitation and their battle effects
+  minimap.js          minimap canvas and click-to-jump
+  anim/               human.js (18-joint procedural), quadruped.js (horse/camel/dog, elephant)
+  sim/                stage, nav (A*), agent, world, combat, ai, objective, command,
+                      engineering, landing, projectiles, ragdoll, stageEvents,
+                      fire (ignition/spread/smoke grid), dynamics (flood, ice, galleys, fires)
+  render/             instanced bodies, stage structures, particles
+tools/                bench / balance (win-rate sweeps incl. escort), test (deterministic snapshot),
+                      ui-check (browser: layout at 1280x720 + 390x844, adaptive quality, touch, panels)
 ```
 
 ## Testing
 
 ```
-npm test                               # deterministic snapshot: field / S / seed 7 / annihilate, 90 s,
-                                       # final counts compared with tools/baseline.json (±3)
-node tools/test.mjs --update           # regenerate tools/baseline.json after an intentional
-                                       # simulation change (say so in the commit message)
-node tools/balance.mjs field,river 1,7 S 180        # win-rate sweep: stages, seeds, size, max seconds
-node tools/balance.mjs all 7 S 420 annihilate       # the full sweep (slow: 19 stages)
-node tools/ui-check.mjs                # browser UI check; starts its own vite server on :5199
+npm test                    # deterministic snapshot vs tools/baseline.json (±3)
+node tools/test.mjs --update   # regenerate the baseline after an INTENTIONAL sim change (say so in the commit)
+node tools/balance.mjs field,canyon 1,7,42 S 600 escort   # win-rate sweep (stages, seeds, size, seconds, mode)
+node tools/bench.mjs siege S 45                            # one-stage smoke with per-regiment end states
+node tools/ui-check.mjs     # browser UI verification; own vite server on :5199
+node tools/facing-probe.mjs # facing audit: post-pose joint geometry vs heading for every unit type (all packs)
 ```
-
-The snapshot harness pins `Math.random()` to a seeded PRNG before building the world: the simulation's own PRNG is seeded, but a couple of cosmetic call sites (ragdoll kick jitter, quadruped phase) still use `Math.random()` and feed back into the battle, so an unpinned run is not reproducible from its seed — see the determinism note at the top of `tools/test.mjs`. The balance tool pins it the same way, per seed.
 
 ## Approximations
 
-A few effects are deliberately approximate:
+Deliberate, documented in the code where they live:
 
-- **Smoke** is a single global sight factor, scaled by how much is burning, instead of a per-position smoke field.
-- **Burnt houses keep their mesh**: the stage renderer is static, so a burnt-out house still stands visually; only its raster block may collapse, letting men walk through where it stood.
-- **Naval galleys board at the beaches**: marines come ashore over a gangplank at the berths near the transports, rather than ship-to-ship grappling at anchor.
-- **The flood uses stepped navigation resampling**: as the water rises, the walkable raster and navigation are resampled in steps instead of flowing continuously.
+- Burnt houses keep their mesh (the stage renderer is static); only the raster block collapses.
+- Naval galleys berth and land marines over a gangplank; no ship-to-ship grappling. Turtle ships are an effect (shore battery + cannonade), not a hull prop.
+- The flood resamples navigation in fine steps (0.05 of the rise) instead of flowing continuously; evacuation to final-level high ground is continuous (0.5 s scan).
+- Era packs: siege towers task like rams (no wall bridging); the giant bombard's calibre is range/size on standard rock mechanics; Greek fire cannot be quenched is not modelled (normal ignition); the Immortals' spear half, hwacha rockets (rock arc), Aztec capture-warfare (fanatical morale) and uibyeong terrain stubbornness (numbers) are approximated; the Genko typhoon degrades all missile fire and drowns embarked marines but hulls do not visibly sink; longship/dragon-prow and castle reskins are dressing keys, geometry is shared.
+- Cross-era dream matchups are not balance-tuned (elephants rout low-discipline gun lines; gunpowder counters pure cavalry).
 
 ## License
 

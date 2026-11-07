@@ -2,6 +2,7 @@
 // hoof rumble and arrow volleys, attenuated by distance to the camera.
 import { Music } from './music.js';
 import { trackFor } from './tracks.js';
+import { cosmeticRand } from './util.js'; // audio dressing only, never simulation
 
 export class Sound {
   constructor() {
@@ -35,7 +36,7 @@ export class Sound {
       const key = `${c.family || ''}|${c.stage || ''}|${c.seed ?? ''}`;
       if (key !== this._appliedTrackKey) {
         this._appliedTrackKey = key;
-        this.music.setTrack(trackFor(c.family, c.stage), c.seed);
+        this.music.setTrack(trackFor(c.family, c.stage, c.track), c.seed);
       }
     }
     if (c.weather) this.music.setWeatherMode(c.weather);
@@ -67,7 +68,7 @@ export class Sound {
     const len = ctx.sampleRate * 2;
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    for (let i = 0; i < len; i++) d[i] = cosmeticRand() * 2 - 1;
     this.noise = buf;
     this.music = new Music(ctx, buf, this.master);
     this.applyMusicContext();
@@ -103,16 +104,16 @@ export class Sound {
   noiseBurst(g, dur, f, q, type = 'bandpass', delay = 0) {
     const ctx = this.ctx, t = ctx.currentTime + delay;
     const s = ctx.createBufferSource(); s.buffer = this.noise;
-    s.playbackRate.value = 0.8 + Math.random() * 0.4;
+    s.playbackRate.value = 0.8 + cosmeticRand() * 0.4;
     const flt = ctx.createBiquadFilter(); flt.type = type; flt.frequency.value = f; flt.Q.value = q;
     const gn = ctx.createGain();
     gn.gain.setValueAtTime(g, t); gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(flt).connect(gn).connect(this.master);
-    s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
+    s.start(t, cosmeticRand() * 1.5); s.stop(t + dur + 0.05);
   }
   metal(g) {
     const ctx = this.ctx, t = ctx.currentTime;
-    const base = 900 + Math.random() * 1400;
+    const base = 900 + cosmeticRand() * 1400;
     for (const m of [1, 2.76, 5.4]) {
       const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = base * m;
       const gn = ctx.createGain();
@@ -227,6 +228,6 @@ export class Sound {
     this.bed.gain.value += (Math.min(0.5, fight * 0.006) * k - this.bed.gain.value) * Math.min(1, dt * 2);
     this.hoof.gain.value += (Math.min(1.2, gallop * 0.02) * k - this.hoof.gain.value) * Math.min(1, dt * 2);
     // random clashes proportional to fighting density
-    if (ts > 0 && this.ctx.state === 'running' && Math.random() < fight * dt * 0.15 * ts) this.metal(Math.min(0.6, 0.1 + fight * 0.004));
+    if (ts > 0 && this.ctx.state === 'running' && cosmeticRand() < fight * dt * 0.15 * ts) this.metal(Math.min(0.6, 0.1 + fight * 0.004));
   }
 }

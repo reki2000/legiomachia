@@ -41,7 +41,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 #banner { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 42px; font-weight: 800; letter-spacing: 0.2em; color: #f4e2b0; text-shadow: 0 2px 12px #000; opacity: 0; transition: opacity 0.6s; }
 #dragBox { position: absolute; border: 1px solid #8f8; background: rgba(120, 255, 120, 0.08); }
 @media (max-width: 700px) { #help { display: none; } }
-#tree { position: absolute; left: 8px; top: 96px; width: 290px; max-height: calc(100% - 330px - var(--bar)); overflow-y: auto; font-size: 12px; padding: 6px 8px; }
+#tree { position: absolute; left: 8px; top: 96px; width: 290px; max-height: calc(100% - 360px - var(--bar)); overflow-y: auto; font-size: 12px; padding: 6px 8px; }
 #tree .army { font-weight: 700; margin: 4px 0 2px; cursor: pointer; }
 #tree .wing { margin: 4px 0 1px 4px; cursor: pointer; color: var(--accent); }
 #tree .wing.dead { color: #886; text-decoration: line-through; }
@@ -102,3 +102,19 @@ button:disabled { opacity: 0.45; cursor: default; }
   #soldier .row span:first-child { width: 44px; }
   #soldier .bar { width: 56px; }
 }
+
+/* ---- collapsible HUD panels (steer: portrait phones) ----
+   Every panel can be closed with its × button; closed panels get a
+   slim launcher button on the left edge. State persists in
+   localStorage. .pclosed wins over the panels' own hidden logic. */
+.pclosed { display: none !important; }
+.pClose { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0; font-size: 12px; line-height: 1; opacity: 0.55; z-index: 5; }
+.pClose:hover { opacity: 1; }
+#status .pClose, #controls .pClose { position: static; float: right; }
+#launcher { position: absolute; left: 0; top: 110px; display: flex; flex-direction: column; gap: 4px; z-index: 40; }
+#launcher button { writing-mode: vertical-rl; padding: 8px 3px; font-size: 11px; border-radius: 0 6px 6px 0; opacity: 0.85; }
+#advFold { display: inline-block; }
+#advFold summary { cursor: pointer; display: inline; }
+#advFold .advInner { display: inline-flex; gap: 8px; align-items: center; margin-left: 8px; }
+#engOrders.collapsed .engBody { display: none; }
+#engToggle { font-size: 11px; padding: 2px 6px; }

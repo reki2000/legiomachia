@@ -13,8 +13,8 @@
       <div class="panel" id="status">
         <div class="title" id="stageTitle">古代会戦シミュレーター</div>
         <div class="armies">
-          <span class="red">■ 軍団 <b id="c0">0</b></span>
-          <span class="blue">■ 東方王国 <b id="c1">0</b></span>
+          <span class="red">■ <span id="fn0">軍団</span> <b id="c0">0</b></span>
+          <span class="blue">■ <span id="fn1">東方王国</span> <b id="c1">0</b></span>
         </div>
         <div class="small" id="stats"></div>
         <div class="small" id="objective"></div>
@@ -27,12 +27,9 @@
           <option value="hills">丘陵の会戦</option>
           <option value="forest">森の会戦</option>
           <option value="canyon">峡谷の隘路</option>
-          <option value="river">渡河戦</option>
-          <option value="ford">浅瀬の渡河戦</option>
           <option value="bridge">落橋の渡河戦</option>
           <option value="harbor">港の上陸戦</option>
           <option value="siege">攻城戦</option>
-          <option value="camp">野営地襲撃</option>
           <option value="marsh">沼地の戦い</option>
           <option value="village">村落戦</option>
           <option value="ambush">峠の伏撃</option>
@@ -59,7 +56,6 @@
           <option value="annihilate">殲滅戦</option>
           <option value="capture">拠点占領</option>
           <option value="reinforce">増援</option>
-          <option value="retreat">離脱戦 (野戦のみ)</option>
           <option value="escort">輜重護衛</option>
         </select>
       </label>
@@ -77,8 +73,6 @@
       <button id="bPause">一時停止 (Space)</button>
       <label>速度
         <select id="sSpeed">
-          <option value="0.1">0.1x</option>
-          <option value="0.25">0.25x</option>
           <option value="0.5">0.5x</option>
           <option value="1" selected>1x</option>
           <option value="2">2x</option>
@@ -88,22 +82,27 @@
       <label>カメラ
         <select id="sCam">
           <option value="free">自由 (1)</option>
-          <option value="follow">追跡 (2)</option>
           <option value="cine">映画 (3)</option>
           <option value="overview">俯瞰 (4)</option>
         </select>
       </label>
-      <label><input type="checkbox" id="cAuto" checked /> 自軍AI</label>
-      <label><input type="checkbox" id="cBgm" checked /> BGM (M)</label>
-      <label>シード <input type="number" id="sSeed" style="width:76px" /></label>
-      <label>難易度
-        <select id="sDiff">
-          <option value="easy">易</option>
-          <option value="normal" selected>普</option>
-          <option value="hard">難</option>
-        </select>
+      <label>時代
+        <select id="sEra"></select>
       </label>
+      <label><input type="checkbox" id="cBgm" checked /> BGM (M)</label>
       <label><input type="checkbox" id="cPerf" /> 性能表示</label>
+      <details id="advFold">
+        <summary>詳細</summary>
+        <span class="advInner">
+          <label>シード <input type="number" id="sSeed" style="width:76px" /></label>
+          <label>対決カスタム 自軍
+            <select id="sEra0"></select>
+          </label>
+          <label>敵軍
+            <select id="sEra1"></select>
+          </label>
+        </span>
+      </details>
     </div>
     <div class="panel small" id="perfHud" hidden></div>
     <div class="panel" id="minimapPanel">
@@ -142,14 +141,15 @@
         <button data-f="loose">散開</button>
       </div>
       <div class="orders" id="engOrders" hidden>
-        <span class="small">工兵</span>
-        <button data-t="stakes">防御杭を設置</button>
-        <button data-t="ladder">梯子を掛ける</button>
-        <button data-t="pontoon">舟橋を架ける</button>
-        <button data-t="demolish">木橋を落とす</button>
-        <button data-t="ram">城門を破る</button>
-        <button data-t="ignite">火を放つ</button>
-        <button data-t="clear">瓦礫を除去</button>
+        <button id="engToggle" type="button">工兵タスク ▸</button>
+        <span class="small engBody">工兵</span>
+        <button data-t="stakes" class="engBody">防御杭を設置</button>
+        <button data-t="ladder" class="engBody">梯子を掛ける</button>
+        <button data-t="pontoon" class="engBody">舟橋を架ける</button>
+        <button data-t="demolish" class="engBody">木橋を落とす</button>
+        <button data-t="ram" class="engBody">城門を破る</button>
+        <button data-t="ignite" class="engBody">火を放つ</button>
+        <button data-t="clear" class="engBody">瓦礫を除去</button>
       </div>
     </div>
     <div class="panel" id="soldier" hidden></div>
@@ -172,6 +172,7 @@
     <a id="ghLink" href="https://github.com/reki2000/legiomachia" target="_blank" rel="noopener" title="GitHub: reki2000/legiomachia" aria-label="GitHub repository">
       <svg viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
     </a>
+    <div id="launcher" hidden></div>
     <div id="banner"></div>
     <div id="dragBox" hidden></div>
   </div>

@@ -149,6 +149,16 @@ export const PHRASE_CN = {
     [[0, 4, 6], [8, 7, 2], [10, 9, 2], [12, 12, 4]],
   ],
 };
+// the standard six-section frame with a caller-chosen lead phrase,
+// for era tracks that ride the shared (phrygian) material
+const restSections = lead => [
+  { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
+  { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true },
+  { name: 'melody', bars: 8, key: 0, bass: 'long', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'bridge', bars: 8, key: 5, bass: 'sparse', drums: 'sparse', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: [lead, 'r1'], pad: true },
+  { name: 'climax', bars: 12, key: 0, bass: 'A', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['m2', 'r1', lead], pad: true, harm: true },
+  { name: 'outro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true },
+];
 const cnSections = lead => [
   { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true },
   { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true },
@@ -183,10 +193,10 @@ const euSections = (lead, harm) => [
 ];
 
 export const TRACKS = {
-  carthage: { ...SHARED, drumScale: 0.9, echoWet: 0.6, frameDrum: true, sections: restSections('egypt') },
-  greece: { ...SHARED, bpm: 86, leadInstrument: 'pluck', drumScale: 0.7, echoWet: 0.65, sections: restSections('main') },
+  carthage: { ...SHARED, drumScale: 0.9, echoWet: 0.6, frameDrum: true, phrases: { ...PHRASE }, sections: restSections('m1') },
+  greece: { ...SHARED, bpm: 86, leadInstrument: 'pluck', drumScale: 0.7, echoWet: 0.65, phrases: { ...PHRASE }, sections: restSections('m1') },
   korea: { ...SHARED, bpm: 86, leadInstrument: 'flute', drumScale: 0.8, echoWet: 0.6, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn1') },
-  ottoman: { ...SHARED, bpm: 90, leadInstrument: 'chant', drumScale: 0.9, echoWet: 0.7, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CHANT }, sections: restSections('egypt') },
+  ottoman: { ...SHARED, bpm: 90, leadInstrument: 'chant', drumScale: 0.9, echoWet: 0.7, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CHANT }, sections: restSections('c1') },
   india: { ...SHARED, bpm: 88, leadInstrument: 'pluck', drumScale: 0.85, echoWet: 0.6, phrases: { ...PHRASE, ...PHRASE_RAGA }, sections: [
     { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true, drone: true },
     { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true, drone: true },
@@ -197,7 +207,7 @@ export const TRACKS = {
   ] },
   aztec: { ...SHARED, bpm: 96, leadInstrument: 'flute', drumScale: 1.1, echoWet: 0.5, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn1') },
   // ------------------------------------------------------------ mongol: driving pluck over the shared battle frame
-  mongol: { ...SHARED, bpm: 100, leadInstrument: 'pluck', drumScale: 0.95, echoWet: 0.45, sections: restSections('egypt') },
+  mongol: { ...SHARED, bpm: 100, leadInstrument: 'pluck', drumScale: 0.95, echoWet: 0.45, phrases: { ...PHRASE }, sections: restSections('m2') },
   // ------------------------------------------------------------ europe eras: dorian family (early plain, mid chant, late pluck)
   'europe-early': { ...SHARED, bpm: 82, leadInstrument: 'saw', drumScale: 0.65, echoWet: 0.7, phrases: { ...PHRASE, ...PHRASE_DORIAN }, sections: euSections('eu1', false) },
   'europe-mid': { ...SHARED, bpm: 88, leadInstrument: 'chant', drumScale: 0.75, echoWet: 0.75, phrases: { ...PHRASE, ...PHRASE_DORIAN, ...PHRASE_CHANT }, sections: euSections('eu2', true) },
@@ -355,7 +365,8 @@ export const JINGLES = {
 // Which track a stage gets: wooded / broken-ground stage ids first, then the
 // stage family, then the open-field default.
 const FOREST_STAGES = new Set(['forest', 'burnforest', 'canyon', 'ambush', 'landslide']);
-export function trackFor(family, stageId) {
+export function trackFor(family, stageId, eraTrack) {
+  if (eraTrack && TRACKS[eraTrack]) return TRACKS[eraTrack];
   if (stageId && FOREST_STAGES.has(stageId)) return TRACKS.forest;
   if (family === 'siege') return TRACKS.siege;
   if (family === 'river') return TRACKS.river;
