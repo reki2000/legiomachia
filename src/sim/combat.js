@@ -51,6 +51,9 @@ export function resolveMelee(w, att, ax, az, t, weapon, dmgMul, mounted) {
         }
       }
       let dmg = randRange(W.dmg[0], W.dmg[1]) * dmgMul * (facing < -0.3 ? 1.5 : 1);
+      // obsidian-edged weapons (vsArmor, e.g. macuahuitl): devastating
+      // against flesh, blunted by steel/heavy armour (heavy types count)
+      if (W.vsArmor && t.T && t.T.hp >= 130) dmg *= W.vsArmor;
       if (att && att.droppedWeapon) dmg *= 0.45;   // fighting empty-handed
       if (W.closeDist && !mounted && l < W.closeDist) dmg *= W.closeMul;
       if (facing < -0.3) w.moraleHit(t, -0.05);

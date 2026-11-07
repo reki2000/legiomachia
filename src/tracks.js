@@ -125,6 +125,16 @@ const SHARED = {
 // be queued by name ('intro', 'bridge', 'climax', ...).
 // Chinese pentatonic phrases (D E F# A B over D): one family, three
 // era variations — early sparse, mid fuller, late with a plucked lead.
+// raga-like phrases for India (D F G A C colour over D) and the Aztec track's drum-led frame
+export const PHRASE_RAGA = {
+  rg1: [
+    [[0, 0, 4], [4, 3, 2], [6, 7, 2], [8, 9, 4], [12, 7, 4]],
+    [[0, 12, 3], [3, 10, 1], [4, 9, 2], [6, 7, 2], [8, 3, 4], [12, 0, 4]],
+    [[0, 7, 6], [8, 9, 2], [10, 10, 2], [12, 12, 4]],
+    [[0, 3, 8], [8, 7, 8]],
+  ],
+};
+
 export const PHRASE_CN = {
   cn1: [
     [[0, 0, 6], [8, 2, 2], [10, 4, 4], [14, 7, 2]],
@@ -174,6 +184,18 @@ const euSections = (lead, harm) => [
 
 export const TRACKS = {
   carthage: { ...SHARED, drumScale: 0.9, echoWet: 0.6, frameDrum: true, sections: restSections('egypt') },
+  greece: { ...SHARED, bpm: 86, leadInstrument: 'pluck', drumScale: 0.7, echoWet: 0.65, sections: restSections('main') },
+  korea: { ...SHARED, bpm: 86, leadInstrument: 'flute', drumScale: 0.8, echoWet: 0.6, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn1') },
+  ottoman: { ...SHARED, bpm: 90, leadInstrument: 'chant', drumScale: 0.9, echoWet: 0.7, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CHANT }, sections: restSections('egypt') },
+  india: { ...SHARED, bpm: 88, leadInstrument: 'pluck', drumScale: 0.85, echoWet: 0.6, phrases: { ...PHRASE, ...PHRASE_RAGA }, sections: [
+    { name: 'intro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 0, 0, 0, 0, 1, 0], pad: true, drone: true },
+    { name: 'march', bars: 8, key: 0, bass: 'long', drums: 'half', roots: [0, 0, 1, 0, -2, 0, 0, 0], pad: true, drone: true },
+    { name: 'melody', bars: 8, key: 0, bass: 'long', drums: 'groove', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['rg1', 'r1'], pad: true, drone: true },
+    { name: 'bridge', bars: 8, key: 5, bass: 'sparse', drums: 'sparse', roots: [0, 1, 0, -2, 0, 1, 0, 0], lead: ['rg1', 'r1'], pad: true, drone: true },
+    { name: 'climax', bars: 12, key: 0, bass: 'A', drums: 'dbl', roots: [0, 0, 1, 0, 0, 0, -2, 0], lead: ['rg1', 'r1'], pad: true, drone: true, harm: true },
+    { name: 'outro', bars: 8, key: 0, bass: 'sparse', drums: 'sparse', roots: [0, 0, 1, 0, 0, 0, 0, 0], pad: true, drone: true },
+  ] },
+  aztec: { ...SHARED, bpm: 96, leadInstrument: 'flute', drumScale: 1.1, echoWet: 0.5, frameDrum: true, phrases: { ...PHRASE, ...PHRASE_CN }, sections: cnSections('cn1') },
   // ------------------------------------------------------------ mongol: driving pluck over the shared battle frame
   mongol: { ...SHARED, bpm: 100, leadInstrument: 'pluck', drumScale: 0.95, echoWet: 0.45, sections: restSections('egypt') },
   // ------------------------------------------------------------ europe eras: dorian family (early plain, mid chant, late pluck)

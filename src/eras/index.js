@@ -10,9 +10,14 @@ import { chinaEarly, chinaMid, chinaLate } from './china.js';
 import { europeEarly, europeMid, europeLate } from './europe.js';
 import { mongol } from './mongol.js';
 import { carthage } from './carthage.js';
+import { greece } from './greece.js';
+import { korea } from './korea.js';
+import { ottoman } from './ottoman.js';
+import { india } from './india.js';
+import { aztec } from './aztec.js';
 
-export const ERAS = { rome, japan, 'china-early': chinaEarly, 'china-mid': chinaMid, 'china-late': chinaLate, 'europe-early': europeEarly, 'europe-mid': europeMid, 'europe-late': europeLate, mongol, carthage };
-export const ERA_LIST = [rome, japan, chinaEarly, chinaMid, chinaLate, europeEarly, europeMid, europeLate, mongol, carthage];
+export const ERAS = { rome, japan, 'china-early': chinaEarly, 'china-mid': chinaMid, 'china-late': chinaLate, 'europe-early': europeEarly, 'europe-mid': europeMid, 'europe-late': europeLate, mongol, carthage, greece, korea, ottoman, india, aztec };
+export const ERA_LIST = [rome, japan, chinaEarly, chinaMid, chinaLate, europeEarly, europeMid, europeLate, mongol, carthage, greece, korea, ottoman, india, aztec];
 
 // Compose the two teams' packs into the world hooks buildScenario and
 // the Agent constructor read. Returns false (and clears the hooks) when
@@ -21,7 +26,7 @@ export const ERA_LIST = [rome, japan, chinaEarly, chinaMid, chinaLate, europeEar
 import { setActiveNames, setActiveShields, setActiveLooks } from '../sim/defs.js';
 export function composeEra(world, packA, packB) {
   if (packA.id === 'rome' && packB.id === 'rome') {
-    world.factionNames = null; world.eraDeploy = null; world.eraPacks = null; world.eraStageHooks = null;
+    world.factionNames = null; world.eraDeploy = null; world.eraPacks = null; world.eraStageHooks = null; world.unknownShock = [1, 1];
     setActiveNames('rome0', 'rome1'); setActiveShields(null, null); setActiveLooks(null, null);
     return false;
   }
@@ -30,6 +35,13 @@ export function composeEra(world, packA, packB) {
   setActiveNames(packA.factions[0].names, packB.factions[1].names);
   setActiveShields(packA.shields || null, packB.shields || null);
   setActiveLooks(packA.look || null, packB.look || null);
+  // 'unknown weapon' shock: a pack flagged shockVulnerable suffers the
+  // generic gunshot-shock multiplier (ai.js) at full strength when the
+  // enemy brings advancedArms (firearms / steel cavalry it has never
+  // seen); everyone else's coefficient stays 0
+  world.unknownShock = [1, 1];
+  if (packA.advancedArms && packB.shockVulnerable) world.unknownShock[1] = 2.2;
+  if (packB.advancedArms && packA.shockVulnerable) world.unknownShock[0] = 2.2;
   const hooks = [packA.stageHook, packB.stageHook].filter(Boolean);
   world.eraStageHooks = hooks.length ? hooks : null;
   world.eraDeploy = (b, st) => {

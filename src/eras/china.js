@@ -166,7 +166,7 @@ function deployLate(b, st, team) {
 deployLate.handles = st => st.kind === 'field';
 
 export const chinaLate = {
-  id: 'china-late', name: '中国・宋〜元明',
+  id: 'china-late', name: '中国・宋〜元明', advancedArms: true,
   factions: [{ name: '宋軍', names: 'china0' }, { name: '明軍', names: 'china1' }],
   types: TYPES_LATE, weapons: WEAPONS_LATE, shields: SHIELDS_CN, look,
   scenario: deployLate, reskin: {}, track: 'china-late',

@@ -206,5 +206,6 @@ export const europeLate = {
   id: 'europe-late', name: '欧州・中世後期',
   factions: [{ name: 'イングランド軍', names: 'europe0' }, { name: 'フランス軍', names: 'europe1' }],
   types: TYPES_EU3, weapons: WEAPONS_EU3, shields: SH_EU, look,
+  advancedArms: true,
   scenario: deployEU3, reskin: {}, track: 'europe-late',
 };
