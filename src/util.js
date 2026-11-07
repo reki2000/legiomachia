@@ -27,6 +27,14 @@ export function rand() {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
+// Cosmetic randomness: deliberately NOT the seeded PRNG. Use this (or plain
+// Math.random, its alias) only for render/audio dressing whose result can
+// never feed back into simulation state — particle jitter, colour jitter,
+// camera shake, noise-buffer contents. Anything that can move a body, pick a
+// target or gate a simulation event must use rand() above, or a battle will
+// not replay from its seed.
+export const cosmeticRand = () => Math.random();
+
 export const randRange = (a, b) => a + (b - a) * rand();
 export const randSign = () => (rand() < 0.5 ? -1 : 1);
 export function randNormal() {

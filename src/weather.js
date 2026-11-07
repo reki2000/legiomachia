@@ -1,6 +1,7 @@
 // Weather and time of day: sky, fog, light, rain and stars, plus the few gameplay
 // effects they carry (slower going in the rain, worse shooting in rain, fog and night).
 import * as THREE from 'three';
+import { cosmeticRand } from './util.js'; // rain/star placement is visual only
 
 // env: speed = movement multiplier, acc = missile accuracy, vis = how far men notice the enemy
 export const WEATHER = {
@@ -57,7 +58,7 @@ export class Weather {
   buildRain() {
     this.dropPos = new Float32Array(DROPS * 6);
     for (let i = 0; i < DROPS; i++) {
-      const x = (Math.random() - 0.5) * BOX * 2, y = Math.random() * BOXH, z = (Math.random() - 0.5) * BOX * 2;
+      const x = (cosmeticRand() - 0.5) * BOX * 2, y = cosmeticRand() * BOXH, z = (cosmeticRand() - 0.5) * BOX * 2;
       this.dropPos.set([x, y, z, x, y, z], i * 6);
     }
     const g = new THREE.BufferGeometry();
@@ -70,7 +71,7 @@ export class Weather {
   buildStars() {
     const n = 900, p = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
-      const u = Math.random(), a = Math.random() * Math.PI * 2, y = 0.12 + u * 0.88, r = Math.sqrt(1 - y * y);
+      const u = cosmeticRand(), a = cosmeticRand() * Math.PI * 2, y = 0.12 + u * 0.88, r = Math.sqrt(1 - y * y);
       p.set([Math.cos(a) * r * 1800, y * 1800, Math.sin(a) * r * 1800], i * 3);
     }
     const g = new THREE.BufferGeometry();
