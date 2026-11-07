@@ -15,6 +15,6 @@ export const rome = {
   types: {},        // overlays/additions onto defs.TYPES (none)
   weapons: {},      // overlays/additions onto defs.WEAPONS (none)
   scenario: deployRome,   // roster form of the standard field armies (dream matchups only)
-  reskin: {},       // stageId -> reskin key for the stage renderer (none)
+  arch: 'rome', reskin: {},       // stageId -> reskin key for the stage renderer (none)
   track: null,      // null = per-family tracks (the original behaviour)
 };

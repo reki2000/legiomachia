@@ -1,7 +1,7 @@
 // RTS camera with follow and an automatic "film director" mode.
 import * as THREE from 'three';
 import { clamp, lerp, rand, randRange, wrapAngle } from './util.js';
-import { groundHeight } from './terrain.js';
+import { groundHeight, waterLevel } from './terrain.js';
 import { K_INF, K_CAV, K_ELE, K_CHR } from './sim/defs.js';
 import { isActive } from './sim/world.js';
 
@@ -446,9 +446,19 @@ export class CameraRig {
   apply(dt, stiffness) {
     const k = this.first ? 1 : 1 - Math.exp(-stiffness * dt);
     this.first = false;
+    // the camera never goes under water, in any mode: the floor for the
+    // camera height is the higher of the ground and the water surface
+    // (+ margin). waterLevel() reads the stage's live WL, so the clamp
+    // follows the flood as it rises; on a frozen river the ice sheet
+    // sits at WL - 0.08, so the same line keeps the camera above it.
+    // Clamping the desired pos as well as the smoothed one keeps the
+    // rig from being dragged down and snapping back at the shore.
+    const wl = waterLevel();
+    const w = wl > -1e8 ? wl + 0.45 : -Infinity;
+    if (this.pos.y < w) this.pos.y = w;
     this.smoothPos.lerp(this.pos, k);
     this.smoothLook.lerp(this.look, k);
-    const g = groundHeight(this.smoothPos.x, this.smoothPos.z) + 0.4;
+    const g = Math.max(groundHeight(this.smoothPos.x, this.smoothPos.z) + 0.4, w);
     if (this.smoothPos.y < g) this.smoothPos.y = g;
     this.camera.position.copy(this.smoothPos);
     this.camera.lookAt(this.smoothLook);

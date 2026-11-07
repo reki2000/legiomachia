@@ -125,6 +125,15 @@ export const NICKNAMES = [
 // Era packs register extra name pools here (see src/eras/); the active
 // pair is chosen per battle by setActiveNames before the scenario is
 // built, so name generation stays inside the seeded stream.
+// A pool is { a, b } plus optional culture format fields:
+//   order: 'ba'  -> family name first (Japan / China / Korea)
+//   bMode: 'epithet' -> b entries are epithets joined as AのB (Mongols,
+//                       Vikings, Carthaginians...), not A・B
+//   nick: era-flavoured nickname pool [[text, lookFlag], ...] replacing
+//         the generic NICKNAMES for this culture
+// The format fields consume no randomness: the number of rand() calls
+// per soldier is identical for every pool, so switching pools never
+// perturbs the seeded simulation stream (snapshot-safe).
 export const NAME_SETS = { rome0: NAMES[0], rome1: NAMES[1] };
 let activeNames = [NAMES[0], NAMES[1]];
 export function setActiveNames(keyA, keyB) {
@@ -134,10 +143,15 @@ export function registerNameSet(key, set) { if (!NAME_SETS[key]) NAME_SETS[key] 
 
 export function genNameFull(team) {
   const N = activeNames[team] || activeNames[0];
-  let name = N.a[Math.floor(rand() * N.a.length)] + '・' + N.b[Math.floor(rand() * N.b.length)];
+  const a = N.a[Math.floor(rand() * N.a.length)], b = N.b[Math.floor(rand() * N.b.length)];
+  let name;
+  if (N.bMode === 'epithet') name = a + 'の' + b;
+  else if (N.order === 'ba') name = b + '・' + a;
+  else name = a + '・' + b;
   let look = null;
   if (rand() < 0.16) {
-    const [nick, flag] = NICKNAMES[Math.floor(rand() * NICKNAMES.length)];
+    const pool = N.nick || NICKNAMES;
+    const [nick, flag] = pool[Math.floor(rand() * pool.length)];
     name += '「' + nick + '」';
     look = flag;
   }
