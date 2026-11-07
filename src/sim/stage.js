@@ -162,7 +162,7 @@ export class Stage {
     this.rx0 = x0; this.rz0 = z0;
     this.rw = Math.ceil((x1 - x0) / this.res); this.rh = Math.ceil((z1 - z0) / this.res);
     this.floor = new Float32Array(this.rw * this.rh).fill(NaN);
-    this.flags = new Uint8Array(this.rw * this.rh);
+    this.flags = new Uint16Array(this.rw * this.rh); // 16-bit: F_ICE is bit 256
   }
   idx(x, z) {
     if (!this.floor) return -1;
