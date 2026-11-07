@@ -62,6 +62,7 @@ export class Command {
     if (!this.deployDone && w.time > 0.3) { this.deployDone = true; this.deployTasks(); }
     if (w.phase !== 'battle') return;
     if (!this.started) { this.started = true; this.battleTasks(); }
+    this.kiteRegiments();
     this.genT -= dt;
     for (const army of w.armies) {
       if (!army) continue;
@@ -218,6 +219,34 @@ export class Command {
     return !st.gates.every(g => g.alive);
   }
 
+  // feigned retreat (Mongol horse archers): a regiment flagged feigned
+  // keeps its distance from the nearest enemy regiment and falls back
+  // while its riders shoot over their shoulders, luring pursuers out.
+  // It only kites MELEE pursuers — against a missile-heavy enemy the
+  // standoff band sits inside their range and just gets shot.
+  kiteRegiments() {
+    const w = this.w;
+    for (const r of w.regs) {
+      if (!r.feigned || r.manual || r.alive === 0 || r.fleeT > 0) continue;
+      const e = w.nearestEnemyReg(r);
+      if (!e) continue;
+      let ranged = 0;
+      for (const m of e.agents) {
+        if (!m.alive) continue;
+        const wid = m.crew && m.crew.length ? m.crew[0].weapon : (m.T ? m.T.weapon : -1);
+        if (WEAPONS[wid] && WEAPONS[wid].ranged) ranged++;
+      }
+      if (ranged > e.alive * 0.4) continue;
+      const dx = r.cx - e.cx, dz = r.cz - e.cz, d = Math.hypot(dx, dz) || 1;
+      if (d < 70) {
+        const E = w.stage.extent;
+        r.tx = Math.max(-E, Math.min(E, r.cx + dx / d * 46));
+        r.tz = Math.max(-E, Math.min(E, r.cz + dz / d * 46));
+        r.hold = false;
+      }
+    }
+  }
+
   wingAI(army, wing) {
     const w = this.w, st = w.stage;
     const claimed = new Map();
@@ -239,16 +268,13 @@ export class Command {
       return;
     }
     for (const reg of wing.regs) {
+      if (reg.hookUntil && w.time > reg.hookUntil) { reg.manual = false; reg.hookUntil = 0; }
       if (reg.manual || reg.alive === 0 || reg.order === 'rout' || reg.follow) continue;
       if (reg.kind === K_CAV && reg.T.commander) continue;
+      // flood evacuation (dynamics.js) outranks battle orders until dry
+      if (reg.floodEvac) continue;
       // escort: the Legion guards the convoy, the Kingdom hunts the wagons
       if (obj && obj.mode === 'escort' && this.escortAI(army, reg, obj)) continue;
-      // retreat: everything but the rearguard marches for the exit
-      if (obj && obj.mode === 'retreat' && army.team === 0 && reg.kind !== K_ENG && reg.type !== 'guard' && !obj.isRearguard(reg)) {
-        const tz = obj.exit.z - 25;
-        if (reg.order !== 'move' || reg.tz > tz + 40) w.orderMove(reg, reg.cx * 0.7, tz);
-        continue;
-      }
       const type = reg.type;
       const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
       if (type === 'engineer' || reg.kind === K_ENG) continue; // handled by stage tasks
@@ -281,34 +307,99 @@ export class Command {
       }
     }
   }
-  // escort mode: team 0 rings the convoy and fights off close threats; team 1
-  // hunts the wagons themselves (melee through their nearest escort, missiles direct)
+  // escort mode pairing: every Legion combat regiment is assigned to ONE
+  // wagon (round-robin over the living wagons, stable in regiment order);
+  // Kingdom regiments pick their wagon by a claimed-count score so the whole
+  // army does not focus-fire a single wagon. Rebuilt when the wagon set or
+  // the regiment set changes (signature check), not every tick.
+  escortPairing(obj) {
+    const w = this.w;
+    const wagons = (obj.wagons || []).filter(a => a && isActive(a));
+    const sig = wagons.map(a => a.idx).join(',') + '|' + w.regs.length;
+    if (obj._escortSig === sig) return obj._escortPair;
+    const guards = w.regs.filter(r => r.team === 0 && r.alive > 0 && r.kind !== K_ENG && r.type !== 'wagon' && r.type !== 'engineer' && r.type !== 'guard');
+    const pair = new Map();
+    guards.forEach((r, i) => { if (wagons.length) pair.set(r, wagons[i % wagons.length]); });
+    obj._escortSig = sig; obj._escortPair = pair;
+    return pair;
+  }
+  // nearest enemy regiment with a man within R of (x, z)
+  threatNear(x, z, R, team) {
+    let best = null, bd = R;
+    for (const r of this.w.regs) {
+      if (r.team === team || r.alive === 0) continue;
+      for (const a of r.agents) {
+        if (!isActive(a)) continue;
+        const d = Math.hypot(a.x - x, a.z - z);
+        if (d < bd) { bd = d; best = r; }
+      }
+    }
+    return best;
+  }
+  // escort mode: team 0 guards its assigned wagon and intercepts anything
+  // closing on it; team 1 hunts the wagons, spread across them (melee
+  // through a wagon's nearest escort when one is in the way, missiles direct)
   escortAI(army, reg, obj) {
     const w = this.w;
     if (reg.kind === K_ENG || reg.type === 'wagon' || reg.type === 'engineer' || reg.type === 'guard') return false;
     const wagons = (obj.wagons || []).filter(a => a && isActive(a));
+    if (!wagons.length) return false;
     if (army.team === 0) {
-      const threat = this.nearestThreat(reg, 45);
-      if (threat) { if (reg.order !== 'charge' || reg.targetReg !== threat) w.orderCharge(reg, threat); return true; }
-      if (!wagons.length) return false;
-      let cx = 0, cz = 0;
-      for (const a of wagons) { cx += a.x; cz += a.z; }
-      cx /= wagons.length; cz /= wagons.length;
-      const idx = w.regs.indexOf(reg);
-      const ang = idx * 2.399963, rad = 18 + (idx % 3) * 7;
-      const gx = cx + Math.cos(ang) * rad, gz = cz + Math.sin(ang) * rad;
-      if (Math.hypot(reg.cx - gx, reg.cz - gz) > 25) {
-        const key = Math.round(gx) + ',' + Math.round(gz);
-        if (reg.order !== 'move' || reg.objTarget !== key) { reg.objTarget = key; w.orderMove(reg, gx, gz); }
+      const pair = this.escortPairing(obj);
+      const mine = pair.get(reg) || wagons[0];
+      // canyon: a ring around each wagon does not fit a 30 m corridor and
+      // fragments the line — instead the guards form one blocking line
+      // across the pass, ahead of the lead wagon, and only sally at
+      // threats that come within 50 m of the line
+      if (w.stage.canyon) {
+        let lead = wagons[0];
+        for (const a of wagons) if (a.z > lead.z) lead = a;
+        const lz = lead.z + 26;
+        const guards = [...pair.keys()];
+        const slot = guards.indexOf(reg);
+        const gx = (slot - (guards.length - 1) / 2) * 7, gz = lz;
+        const threat = this.threatNear(reg.cx, reg.cz, 50, 0);
+        if (threat && Math.hypot(threat.cx - gx, threat.cz - gz) < 55) {
+          if (reg.order !== 'charge' || reg.targetReg !== threat) w.orderCharge(reg, threat);
+          return true;
+        }
+        if (Math.hypot(reg.cx - gx, reg.cz - gz) > 9) {
+          const key = Math.round(gx / 6) + ',' + Math.round(gz / 6);
+          if (reg.order !== 'move' || reg.objTarget !== key) { reg.objTarget = key; w.orderMove(reg, gx, gz); }
+        } else if (reg.order === 'charge' && (!reg.targetReg || reg.targetReg.alive === 0)) w.orderHold(reg);
+        return true;
       }
+      // intercept: anything within 70 m of MY wagon (missile troops matter —
+      // they used to shell the wagons from outside the old 45 m ring), or
+      // within 45 m of my own regiment
+      const threat = this.threatNear(mine.x, mine.z, 70, 0) || this.nearestThreat(reg, 45);
+      if (threat) { if (reg.order !== 'charge' || reg.targetReg !== threat) w.orderCharge(reg, threat); return true; }
+      // ride with the wagon: offset slot around it, re-issued as it moves
+      const sibs = [...pair.values()].filter(a => a === mine).length;
+      const slot = [...pair.keys()].filter(r => pair.get(r) === mine).indexOf(reg);
+      const ang = (slot / Math.max(1, sibs)) * Math.PI * 2 + mine.heading;
+      const rad = 13 + (slot % 2) * 6;
+      const gx = mine.x + Math.sin(ang) * rad, gz = mine.z + Math.cos(ang) * rad;
+      if (Math.hypot(reg.cx - gx, reg.cz - gz) > 10) {
+        const key = Math.round(gx / 6) + ',' + Math.round(gz / 6);
+        if (reg.order !== 'move' || reg.objTarget !== key) { reg.objTarget = key; w.orderMove(reg, gx, gz); }
+      } else if (reg.order === 'charge' && (!reg.targetReg || reg.targetReg.alive === 0)) w.orderHold(reg);
       return true;
     }
-    // team 1: prefer the wagons
-    let wagonReg = null, wd = 1e9;
+    // team 1: choose a wagon, but spread the army over all of them — the
+    // claimed count (regiments already ordered onto that wagon) dominates
+    // the score, distance breaks ties
+    const claimed = new Map();
+    for (const r of w.regs) {
+      if (r.team !== 1 || !r.targetReg || r.targetReg.type !== 'wagon') continue;
+      claimed.set(r.targetReg, (claimed.get(r.targetReg) || 0) + 1);
+    }
+    let wagonReg = null, bestScore = 1e18;
     for (const r of w.regs) {
       if (r.team !== 0 || r.type !== 'wagon' || r.alive === 0) continue;
-      const d = Math.hypot(r.cx - reg.cx, r.cz - reg.cz);
-      if (d < wd) { wd = d; wagonReg = r; }
+      const mine = r === reg.targetReg ? (claimed.get(r) || 1) - 1 : (claimed.get(r) || 0);
+      const score = Math.hypot(r.cx - reg.cx, r.cz - reg.cz) + mine * 160;
+      if (score < bestScore) { bestScore = score; wagonReg = r; }
     }
     if (!wagonReg) return false;
     const W = reg.kind === K_INF ? WEAPONS[reg.T.weapon] : null;
@@ -454,7 +545,7 @@ export class Command {
   // ------------------------------------------------------------ engineers
   deployTasks() {
     const w = this.w, st = w.stage;
-    if (st.kind !== 'field' || (w.objective && w.objective.mode === 'retreat')) return;
+    if (st.kind !== 'field') return;
     for (const reg of w.regs) {
       if (reg.type !== 'engineer' || !w.auto[reg.team] && reg.team === 0 && reg.manual) continue;
       // stake the front of the most exposed missile/spear unit

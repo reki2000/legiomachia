@@ -3,13 +3,16 @@ import { clamp, lerp, wrapAngle, rand, randRange } from '../util.js';
 import { AnimState, makeBasis, NJ, SEAT_RIDE, SEAT_STAND, SEAT_GROUND, SH_NONE, W_SWORD, W_SPEAR, W_BOW, W_HAMMER, W_BANNER } from '../anim/human.js';
 import { QuadState } from '../anim/quadruped.js';
 import {
-  TYPES, WEAPONS, K_INF, K_CAV, K_ELE, K_CHR, K_DOG, K_ENG, SHIELD_FOR, genStats, genName,
+  TYPES, WEAPONS, K_INF, K_CAV, K_ELE, K_CHR, K_DOG, K_ENG, SHIELD_FOR, shieldFor, genStats, genName, genNameFull, emblemFor,
   humanLook, horseLook, camelLook, dogLook, eleLook, chariotLook, engineLook,
 } from './defs.js';
 import { allocMount } from './mounts.js';
 
 export const S_ALIVE = 0, S_DOWN = 1, S_GETUP = 2, S_DEAD = 3, S_GONE = 4;
-let nextId = 1;
+// NOTE: there is deliberately no module-level id counter here. Agent.id is
+// assigned by World.addAgent (world-local, = idx + 1) because ai.js uses
+// a.id for think staggering and steering jitter: a process-global counter
+// made the second battle in a process diverge from the first.
 
 export function isActive(a) {
   return (a.state === S_ALIVE || a.state === S_GETUP) && !a.riderless;
@@ -19,14 +22,17 @@ export class Agent {
   constructor(team, type, reg, quality = 0.5) {
     const T = TYPES[type];
     this.T = T; this.type = type; this.kind = T.kind;
-    this.id = nextId++; this.idx = -1;
+    this.id = 0; this.idx = -1;   // id assigned by World.addAgent (see note above)
     this.team = team; this.reg = reg; this.slot = 0;
     this.x = 0; this.z = 0; this.y = 0; this.vx = 0; this.vz = 0; this.heading = 0;
     this.prevX = 0; this.prevZ = 0;
     this.dvx = 0; this.dvz = 0; this.faceH = NaN; this.dh = 0; this.dspd = 0;
     this.radius = T.radius; this.ext = T.ext || 0;
     this.stats = genStats(quality);
-    this.name = genName(team);
+    if (T.trait) this.stats.trait = T.trait;   // dedicated units (berserkers, Spartans) always carry their trait
+    const nf = genNameFull(team);
+    this.name = nf.name; this.nickLook = nf.look;
+    this.buddy = null; this.buddyGone = false; this.rageT = 0; this.droppedWeapon = false;
     const S = this.stats;
     if (this.kind === K_INF) this.radius *= clamp(0.5 + S.size * 0.5, 0.9, 1.12);
     this.mass = T.mass * S.size * S.size;
@@ -62,15 +68,21 @@ export class Agent {
     this.pointT = 0; this.faceTo = 0; this.deathNoted = false; this.hitDone = false; this.commanderBody = null;
     if (this.kind === K_INF) {
       this.weapon = T.weapon;
-      this.shield = (SHIELD_FOR[team] && SHIELD_FOR[team][type]) || SH_NONE;
+      this.shield = shieldFor(team, type);
       this.st = new AnimState();
       this.st.scale = S.size;
+      this.st.lefty = S.lefty;
       this.joints = new Float32Array(NJ * 3);
       this.look = humanLook(team, type);
+      if (this.nickLook === 'eyepatch') this.look.eyepatch = true;
+      if (this.nickLook === 'redhair') { this.look.hairCol = [0.62, 0.25, 0.1]; this.look.beardCol = this.look.hairCol; }
+      if (this.nickLook === 'bald') this.look.hair = 0;
+      if (reg) { const em = emblemFor(team, reg.id || 0); this.look.emblemCol = em.col; this.look.emblemShape = em.shape; }
       const R = WEAPONS[this.weapon].ranged;
       if (R && R.ammo) this.ammo = R.ammo;
     } else {
       this.q = new QuadState();
+      if (this.kind === K_ELE) this.q.tusk = 0.55 + S.size * 0.55;   // bigger elephants, longer tusks
       this.crew = [];
       allocMount(this);
       if (this.kind === K_CAV) {
@@ -79,6 +91,9 @@ export class Agent {
         this.crew.push(makeCrew(team, 'rider', w, SEAT_RIDE, 0, 0, T.riderHp, quality));
       } else if (this.kind === K_DOG) {
         this.look = dogLook();
+        // some dogs fight on after the pack breaks (phase 1 loyalty):
+        // bold dogs always, calm dogs sometimes; nervous dogs run
+        this.loyalDog = S.temper === 'bold' || (S.temper === 'calm' && rand() < 0.3);
       } else if (this.kind === K_ELE) {
         this.look = eleLook(team);
         this.crew.push(makeCrew(team, 'mahout', W_SPEAR, SEAT_RIDE, 0, 0, 80, quality));
@@ -146,6 +161,15 @@ export class Regiment {
     this.flank = null; this.flankReached = true; this.follow = null;
     this.slotMap = null; this.casualty = 0; this.noPath = false; this.pathTarget = null;
     this.pendingOrder = null; this.bearerT = 0; this.assaultX = undefined; this.threatD = 0;
+  }
+  // Phase-1 buddies: pair up the regiment's foot soldiers (adjacent slots).
+  // When one of a pair dies, the survivor reacts (see Combat.killInf):
+  // rage-charge or collapse, weighted by his trait. Mounted/animal
+  // regiments are skipped — their crews already have the rider bond.
+  pairBuddies() {
+    if (this.kind !== K_INF) return;
+    const men = this.agents.filter(a => a.kind === K_INF);
+    for (let i = 0; i + 1 < men.length; i += 2) { men[i].buddy = men[i + 1]; men[i + 1].buddy = men[i]; }
   }
   get fs() { return FORM_SP[this.formation] || 1; }
   get width() { return this.effCols * this.spX * this.fs; }

@@ -1,6 +1,7 @@
 // Position-based-dynamics ragdoll over the same 18 joints used by the animator.
 import { J, NJ } from '../anim/human.js';
 import { floorBelow, waterLevel } from '../terrain.js';
+import { rand } from '../util.js';
 
 // [a, b, minFactor, maxFactor] relative to rest length taken from the initial pose
 const RIGID = 1;
@@ -65,9 +66,12 @@ export class Ragdoll {
     for (let i = 0; i < NJ; i++) {
       const w = 1 + topple * (UPPER[i] * 2 - 1);
       const j = i * 3;
-      v[j] = vx + ix * w + (Math.random() - 0.5) * 0.4;
-      v[j + 1] = vy + iy * w + (Math.random() - 0.5) * 0.3;
-      v[j + 2] = vz + iz * w + (Math.random() - 0.5) * 0.4;
+      // seeded rand(), not Math.random: a knocked-down man who gets up is
+      // placed at this ragdoll's pelvis, so this jitter feeds back into the
+      // battle and must replay from the battle seed
+      v[j] = vx + ix * w + (rand() - 0.5) * 0.4;
+      v[j + 1] = vy + iy * w + (rand() - 0.5) * 0.3;
+      v[j + 2] = vz + iz * w + (rand() - 0.5) * 0.4;
     }
     this.sleeping = false; this.calm = 0;
   }

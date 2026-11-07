@@ -1,12 +1,17 @@
 // Procedural quadrupeds: one parametric rig for horse / camel / dog, plus the elephant.
-import { TAU, lerp, smoothstep, ik2 } from '../util.js';
+import { TAU, lerp, smoothstep, ik2, rand } from '../util.js';
 
 export class QuadState {
-  constructor(phase = Math.random()) {
-    this.phase = phase; this.speed = 0; this.t = Math.random() * 10;
+  // seeded rand(), not Math.random: the gait phase drives the saddle joint,
+  // and a dismounted rider spawns at that joint — so the phase feeds back
+  // into the simulation and must replay from the battle seed. QuadState is
+  // only constructed by sim agents (src/sim/agent.js), in seed order.
+  constructor(phase = rand()) {
+    this.phase = phase; this.speed = 0; this.t = rand() * 10;
     this.rear = 0;   // rearing (horse) / lunge (dog) 0..1
     this.wheel = 0;  // chariot wheel angle
     this.swing = 0;  // engine animation (ram beam / onager arm)
+    this.idlePh = rand();  // per-animal phase for idle behaviours (grazing, pawing, ear/tail flicks)
   }
   tick(dt, stride) {
     this.phase += (dt * this.speed) / stride;
@@ -96,7 +101,12 @@ export function poseQuad(out, st, B, P, dead = false) {
   set(Q.CHEST, P.chest[0], P.chest[1], P.chest[2]);
   set(Q.CENTER, P.center[0], P.center[1], P.center[2]);
   set(Q.SADDLE, P.saddle[0], P.saddle[1], P.saddle[2]);
-  const neckA = P.neckA - 0.3 * g + 0.12 * Math.sin(TAU * ph + 2) * g + (dead ? -0.6 : 0) + rear * 0.3;
+  // idle behaviours (phase 1): a standing animal grazes in slow cycles
+  // (neck drops), paws the ground now and then, tail already sways on
+  // st.t — all phased per individual by st.idlePh so a herd never syncs
+  const idle = dead ? 0 : 1 - move;
+  const graze = idle * Math.max(0, Math.sin(st.t * 0.21 + st.idlePh * 6.28)) ** 3 * (P.neckBend ? 0.35 : 0.85);
+  const neckA = P.neckA - 0.3 * g + 0.12 * Math.sin(TAU * ph + 2) * g + (dead ? -0.6 : 0) + rear * 0.3 - graze;
   const nb = P.neck;
   set(Q.NECK, nb[0], nb[1], nb[2]);
   const look = Math.sin(st.t * 0.4) * 0.05 * (1 - g);
@@ -128,6 +138,10 @@ export function poseQuad(out, st, B, P, dead = false) {
       y = lift * Math.sin(Math.PI * t);
     }
     let fx = rx, fy = P.hoofY + y, fz = r[2] + o + lunge;
+    if (k === 0 && idle > 0.5) { // pawing the ground while standing
+      const paw = Math.max(0, Math.sin(st.t * 1.7 + st.idlePh * 11)) ** 6;
+      fz -= paw * 0.22; fy += paw * 0.1;
+    }
     if (front && rear > 0) {
       fy += rear * (P.lF[0] + P.lF[1]) * 0.8; fz += rear * 0.25;
       const dy = fy - pcy, dz = fz - pcz;
@@ -179,8 +193,10 @@ export function poseElephant(out, st, B, rage = 0) {
     y += Math.sin(a) * len; z += Math.cos(a) * len;
     set(E.T1 + i, x, y, z);
   }
-  set(E.TUSKLR, -0.28, 2.35 + nod, 2.2); set(E.TUSKL, -0.36, 2.0 + nod * 1.5, 3.0);
-  set(E.TUSKRR, 0.28, 2.35 + nod, 2.2); set(E.TUSKR, 0.36, 2.0 + nod * 1.5, 3.0);
+  // tusk length varies per elephant (st.tusk, set from the agent's stats)
+  const tk = st.tusk || 1;
+  set(E.TUSKLR, -0.28, 2.35 + nod, 2.2); set(E.TUSKL, -0.36, 2.35 + nod - (2.35 - 2.0) * tk - 0.0, 2.2 + 0.8 * tk);
+  set(E.TUSKRR, 0.28, 2.35 + nod, 2.2); set(E.TUSKR, 0.36, 2.35 + nod - (2.35 - 2.0) * tk, 2.2 + 0.8 * tk);
   const flap = Math.sin(t * 2.2) * 0.25 + rage * 0.3;
   set(E.EARLR, -0.55, 2.95, 1.75); set(E.EARL, -1.15 - flap * 0.3, 2.25, 1.45 + flap);
   set(E.EARRR, 0.55, 2.95, 1.75); set(E.EARR, 1.15 + flap * 0.3, 2.25, 1.45 + flap);

@@ -12,7 +12,8 @@ import { Engineering } from './sim/engineering.js';
 import { Command } from './sim/command.js';
 import { buildScenario, SIZES } from './scenario.js';
 import { CameraRig } from './camera.js';
-import { K_INF, K_ENG, TYPES, WEAPONS } from './sim/defs.js';
+import { K_INF, K_ENG, TYPES, WEAPONS, TRAIT_NAMES } from './sim/defs.js';
+import { ERA_LIST, eraById, applyEraTables, composeEra } from './eras/index.js';
 import { Sound } from './sound.js';
 import { Weather, WEATHER } from './weather.js';
 import { Objective, MODES } from './sim/objective.js';
@@ -25,13 +26,22 @@ const params = new URLSearchParams(location.search);
 let sizeKey = params.get('size') || 'M';
 if (!SIZES[sizeKey]) sizeKey = 'M';
 let stageKind = params.get('stage') || 'field';
+// deleted stages fold into their successors (camp -> siege, ford/river -> bridge)
+stageKind = { camp: 'siege', ford: 'bridge', river: 'bridge' }[stageKind] || stageKind;
 if (!STAGE_NAMES[stageKind]) stageKind = 'field';
 $('sSize').value = sizeKey;
 $('sStage').value = stageKind;
 const seedVal = Number(params.get('seed')) || 7;
 $('sSeed').value = seedVal;
 const diffVal = ['easy', 'normal', 'hard'].includes(params.get('diff')) ? params.get('diff') : 'normal';
-$('sDiff').value = diffVal;
+// era packs: ?era= sets both armies, ?era0=/?era1= override per side (dream matchup)
+applyEraTables();
+const eraOpts = sel => { sel.innerHTML = ERA_LIST.map(p => `<option value="${p.id}">${p.name}</option>`).join(''); };
+eraOpts($('sEra')); eraOpts($('sEra0')); eraOpts($('sEra1'));
+const eraBoth = eraById(params.get('era') || 'rome');
+const packA = params.get('era0') ? eraById(params.get('era0')) : eraBoth;
+const packB = params.get('era1') ? eraById(params.get('era1')) : eraBoth;
+$('sEra').value = eraBoth.id; $('sEra0').value = packA.id; $('sEra1').value = packB.id;
 $('stageTitle').textContent = '古代会戦シミュレーター ― ' + STAGE_NAMES[stageKind];
 
 // ------------------------------------------------------------------ renderer
@@ -70,8 +80,6 @@ let skyMat, weather;
 const stage = buildStage(stageKind, SIZES[sizeKey]);
 setStage(stage);
 const nav = new Nav(stage);
-const terrain = buildTerrain(scene, stage);
-const stageR = new StageRenderer(scene, stage);
 
 const capK = Math.max(1, SIZES[sizeKey]) * 1.3;
 const dyn = new SegmentSet(scene, { box: Math.round(60000 * capK), taper: Math.round(9000 * capK), cyl: Math.round(12000 * capK) });
@@ -88,11 +96,22 @@ world.proj = new Projectiles();
 world.fx = fx;
 world.engineering = new Engineering(world);
 world.command = new Command(world);
+composeEra(world, packA, packB);
+if (params.get('scenario') === 'nightraid') world.nightRaid = true;
 buildScenario(world, stageKind, sizeKey, seedVal);
+// era reskins that the deploy itself does not set (japan's castle sets its own)
+if (!stage.reskin && world.eraPacks) {
+  const rk = (packA.reskin || {})[stageKind] || (packA.reskin || {})[stage.kind] || (packB.reskin || {})[stageKind];
+  if (rk) stage.reskin = rk;
+}
+if (world.factionNames) { $('fn0').textContent = world.factionNames[0]; $('fn1').textContent = world.factionNames[1]; }
 world.command.setup();
 world.objective = new Objective(world, MODES[params.get('mode')] ? params.get('mode') : 'annihilate', world.builder);
+// built after the scenario: era deployments may reskin the stage (castle, tenshu, ...)
+const terrain = buildTerrain(scene, stage);
+const stageR = new StageRenderer(scene, stage);
 $('sMode').value = world.objective.mode;
-world.auto[0] = $('cAuto').checked;
+world.auto[0] = true;   // own-side AI is always on; hand-ordered regiments still go manual and leave it
 {
   const wk = WEATHER[params.get('weather')] ? params.get('weather') : 'clear';
   weather = new Weather({ scene, fog: FOG, hemi, sun, skyMat, camera, fx, world, sound });
@@ -107,7 +126,7 @@ world.auto[0] = $('cAuto').checked;
 }
 // tell the music system where and in what weather this battle is fought
 function musicCtx() {
-  if (sound.setMusicContext) sound.setMusicContext({ family: stage.kind, stage: stageKind, weather: weather ? weather.key : $('sWeather').value, seed: seedVal });
+  if (sound.setMusicContext) sound.setMusicContext({ family: stage.kind, stage: stageKind, weather: weather ? weather.key : $('sWeather').value, seed: seedVal, track: world.eraPacks ? packA.track : null });
 }
 musicCtx();
 world.on((type, data) => onWorldEvent(type, data));
@@ -117,7 +136,9 @@ const simStep = world.agents.length > 6000 ? 1 / 30 : 1 / 60;
 const rig = new CameraRig(camera, renderer.domElement);
 // before the battle the camera always looks down on the whole field; the chosen mode
 // (cinematic by default, ?cam=free or follow) takes over when the battle starts
-let battleCam = ['free', 'follow', 'cine', 'overview'].includes(params.get('cam')) ? params.get('cam') : 'cine';
+// 'follow' is no longer a selectable camera (removed from the selector and this
+// validation list); the rig still implements it internally for T-key soldier tracking
+let battleCam = ['free', 'cine', 'overview'].includes(params.get('cam')) ? params.get('cam') : 'cine';
 $('sCam').value = battleCam;
 rig.setMode('overview', world);
 // the overview sits far back: push the haze away with it so the field stays clear
@@ -202,7 +223,6 @@ $('bStart').onclick = () => startBattle();
 $('bPause').onclick = () => togglePause();
 $('sSpeed').onchange = e => { timeScale = Number(e.target.value); slowmo = false; };
 $('sCam').onchange = e => setCam(e.target.value);
-$('cAuto').onchange = e => { world.auto[0] = e.target.checked; };
 // background music: on by default, starts with the first click / key press (browsers block audio before that)
 {
   let saved = null;
@@ -223,7 +243,9 @@ function buildShareURL() {
   u.searchParams.set('mode', $('sMode').value);
   u.searchParams.set('seed', $('sSeed').value || '7');
   u.searchParams.set('cam', $('sCam').value);
-  u.searchParams.set('diff', $('sDiff').value);
+  u.searchParams.set('diff', diffVal);
+  u.searchParams.set('era', $('sEra').value);
+  if ($('sEra0').value !== $('sEra').value || $('sEra1').value !== $('sEra').value) { u.searchParams.set('era0', $('sEra0').value); u.searchParams.set('era1', $('sEra1').value); }
   return u.toString();
 }
 const reload = () => { location.href = buildShareURL(); };
@@ -231,9 +253,18 @@ $('sSize').onchange = reload;
 $('sStage').onchange = reload;
 $('sMode').onchange = reload;
 $('sSeed').onchange = reload;
-$('sDiff').onchange = reload;
+$('sEra').onchange = reload;
+$('sEra0').onchange = reload;
+$('sEra1').onchange = reload;
 $('bReset').onclick = reload;
-$('cPerf').onchange = e => { $('perfHud').hidden = !e.target.checked; };
+$('cPerf').onchange = e => { $('perfHud').hidden = !e.target.checked; $('hud').classList.toggle('perf-on', e.target.checked); };
+// keep --bar equal to the control bar's real height: bottom-anchored panels
+// (minimap, help, selection, perf HUD) are positioned from it, so any change in
+// the bar's height (coarse-pointer padding, font metrics, wrapping) moves them
+// with it instead of letting the bar slide underneath them
+const syncBar = () => document.documentElement.style.setProperty('--bar', $('controls').offsetHeight + 'px');
+new ResizeObserver(syncBar).observe($('controls'));
+syncBar();
 $('bCloseResults').onclick = () => { $('results').hidden = true; };
 $('bRematch').onclick = () => { location.href = buildShareURL(); };
 $('bCopy').onclick = async () => {
@@ -257,7 +288,58 @@ $('help').dataset.full = $('help').innerHTML;
     $('helpToggle').onclick = toggle;
   };
   $('helpToggle').onclick = toggle;
+  toggle();   // the help panel starts minimized: only the [操作説明] toggle shows
 }
+
+// ------------------------------------------------------------------ collapsible HUD panels
+// Every panel can be closed with its x button; closed panels leave a
+// slim launcher button on the left edge. State persists in
+// localStorage. On a first run in a narrow/portrait viewport the army
+// tree starts closed (help starts minimized via its own toggle above)
+// so the battlefield stays visible.
+const PANEL_DEFS = [['status', '状態'], ['controls', '操作'], ['tree', '編成'], ['selPanel', '選択'], ['soldier', '兵士'], ['minimapPanel', '地図'], ['perfHud', '性能']];
+let panelState = {};
+try { panelState = JSON.parse(localStorage.getItem('legioPanels') || '{}'); } catch (e) { panelState = {}; }
+if (!localStorage.getItem('legioPanels') && window.innerWidth <= 700) panelState.tree = 1;
+function applyPanels() {
+  const L = $('launcher');
+  L.innerHTML = '';
+  for (const [id, label] of PANEL_DEFS) {
+    const el = $(id);
+    const closed = !!panelState[id];
+    el.classList.toggle('pclosed', closed);
+    if (closed) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = () => { delete panelState[id]; savePanels(); applyPanels(); };
+      L.appendChild(b);
+    }
+  }
+  L.hidden = !L.children.length;
+  // a closed perf HUD must not leave the selection panel floating high
+  $('hud').classList.toggle('perf-on', $('cPerf').checked && !panelState.perfHud);
+}
+function savePanels() { try { localStorage.setItem('legioPanels', JSON.stringify(panelState)); } catch (e) {} }
+function ensurePanelButton(id) {
+  const el = $(id);
+  if (!el || el.querySelector(':scope > .pClose')) return;
+  const b = document.createElement('button');
+  b.className = 'pClose'; b.textContent = '×'; b.title = '閉じる';
+  b.onclick = () => { panelState[id] = 1; savePanels(); applyPanels(); };
+  el.appendChild(b);
+}
+for (const [id] of PANEL_DEFS) ensurePanelButton(id);
+applyPanels();
+
+// engineer task buttons auto-collapse while the camera is cinematic
+// or overhead (a small toggle reopens them); free camera keeps them open
+let engOpen = false;
+function engAuto() {
+  const auto = (rig.mode === 'cine' || rig.mode === 'overview') && !engOpen;
+  $('engOrders').classList.toggle('collapsed', auto);
+  $('engToggle').textContent = auto ? '工兵タスク ▸' : '工兵タスク ▾';
+}
+$('engToggle').onclick = () => { engOpen = $('engOrders').classList.contains('collapsed'); engAuto(); };
 document.querySelectorAll('#selPanel button[data-o]').forEach(b => { b.onclick = () => issueOrder(b.dataset.o); });
 document.querySelectorAll('#selPanel button[data-f]').forEach(b => { b.onclick = () => { for (const r of mySel()) world.issue(r, 'formation', b.dataset.f); }; });
 document.querySelectorAll('#selPanel button[data-t]').forEach(b => { b.onclick = () => engineerTask(b.dataset.t); });
@@ -280,7 +362,7 @@ function showResults(res) {
   const c = world.counts();
   const obj = world.objective;
   $('resTitle').textContent = res.text;
-  let meta = `勝者: ${teamName(res.winner)} ・ 経過 ${fmtTime(world.elapsed())} ・ シード ${seedVal} ・ 難易度 ${$('sDiff').selectedOptions[0].textContent}`;
+  let meta = `勝者: ${teamName(res.winner)} ・ 経過 ${fmtTime(world.elapsed())} ・ シード ${seedVal} ・ 難易度 ${diffVal}`;
   if (obj) {
     if (obj.escaped) meta += ` ・ 離脱 ${obj.escaped}名`;
     const wg = obj.wagons;
@@ -340,7 +422,7 @@ window.addEventListener('keydown', e => {
     case 'KeyB': issueOrder('retreat'); break;
     case 'KeyT': {
       const a = pickAgent(mouse.x, mouse.y, 40, null);
-      if (a) { rig.followAgent(a); $('sCam').value = 'follow'; }
+      if (a) { rig.followAgent(a); }   // internal follow mode; the selector has no 'follow' option anymore
       break;
     }
     case 'Tab': {
@@ -568,6 +650,7 @@ function updateSelPanel() {
   const mine = regs.some(r => r.team === 0);
   p.querySelectorAll('button').forEach(b => { b.disabled = !mine; });
   $('engOrders').hidden = !regs.some(r => r.team === 0 && (r.type === 'engineer' || r.type === 'ram'));
+  engAuto();
 }
 
 // ------------------------------------------------------------------ army tree
@@ -575,10 +658,13 @@ let treeDirty = true, treeTeam = 0;
 function bar(v, cls = '') { return `<span class="bar ${cls}"><i style="width:${Math.max(0, Math.min(1, v)) * 100}%"></i></span>`; }
 function renderTree() {
   const el = $('tree');
+  const hadBtn = !!el.querySelector(':scope > .pClose');
+  if (hadBtn) el.dataset.keepBtn = '1';
   el.style.top = ($('top').getBoundingClientRect().bottom + 4) + 'px';
   const army = world.armies[treeTeam];
   if (!army) return;
-  let h = `<div class="tabs"><button data-team="0">${treeTeam === 0 ? '▶' : ''}軍団</button><button data-team="1">${treeTeam === 1 ? '▶' : ''}東方王国</button></div>`;
+  const fn = world.factionNames || ['軍団', '東方王国'];
+  let h = `<div class="tabs"><button data-team="0">${treeTeam === 0 ? '▶' : ''}${fn[0]}</button><button data-team="1">${treeTeam === 1 ? '▶' : ''}${fn[1]}</button></div>`;
   const g = army.general;
   const gAlive = world.commanderAlive(g);
   h += `<div class="army" data-army="1">総大将 ${g ? g.crew[0].name : ''} ${gAlive ? bar(g.crew[0].hp / g.crew[0].maxHp) : '<span style="color:#c66">討死</span>'}</div>`;
@@ -595,6 +681,7 @@ function renderTree() {
     }
   }
   el.innerHTML = h;
+  ensurePanelButton('tree');   // the rewrite above drops the panel close button
 }
 $('tree').addEventListener('click', e => {
   const t = e.target.closest('[data-team],[data-army],[data-wing],[data-reg]');
@@ -625,6 +712,11 @@ function renderSoldier() {
   const hp = human ? a.hp / a.maxHp : rider ? rider.hp / rider.maxHp : a.hp / a.maxHp;
   const row = (k, v, cls = '') => `<div class="row"><span>${k}</span>${bar(v, cls)}<span>${typeof v === 'number' ? Math.round(v * 100) : ''}</span></div>`;
   let h = `<div class="nm">${name}</div><div class="small">${a.reg.name} ・ ${TYPES[a.type].name} ・ ${role} ・ ${W}</div><div class="small">状態: ${state}</div>`;
+  if (st) {
+    if (st.trait && TRAIT_NAMES[st.trait]) h += `<div class="small">特性: ${TRAIT_NAMES[st.trait]}</div>`;
+    const bd = human ? a.buddy : null;
+    if (bd) h += `<div class="small">相棒: ${bd.name}${bd.alive ? '' : ' (戦死)'}</div>`;
+  }
   h += row('体格', (st.size - 0.8) / 0.4) + row('攻撃力', st.str / 100) + row('走力', st.spd / 100) + row('体力', st.vit / 100) + row('守備', st.def / 100) + row('胆力', st.mor / 100);
   h += '<hr style="border-color:#4a3c28">';
   h += row('HP', Math.max(0, hp)) + row('スタミナ', a.stamina) + row('士気', Math.max(0, Math.min(1, a.morale)), 'm');
@@ -728,6 +820,8 @@ requestAnimationFrame(frame);
 // debug handle for headless tests
 window.__battle = {
   world, rig, camera, renderer, startBattle, stage, sound,
+  // adaptive-quality state for headless tests (quality itself is module-scope)
+  qualityInfo: () => ({ quality, fpsEMA, pixelRatio: renderer.getPixelRatio(), poseSkip: bodies.poseSkip || 1 }),
   advance(sec) { const n = Math.round(sec / simStep); const t = performance.now(); for (let i = 0; i < n; i++) world.update(simStep); return (performance.now() - t) / n; },
   view(x, z, dist, pitch, yaw) { rig.setMode('free'); rig.target.set(x, 0, z); rig.dist = dist; rig.pitch = pitch; if (yaw !== undefined) rig.yaw = yaw; rig.first = true; },
 };

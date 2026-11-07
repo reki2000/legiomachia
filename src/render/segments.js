@@ -137,7 +137,11 @@ export function makeShadowPool(scene, cap) {
   return p;
 }
 
-// sRGB hex -> linear rgb triplet usable as instance colour
+// sRGB hex -> linear rgb triplet usable as instance colour.
+// The default jitter source is cosmeticRand (Math.random): colour jitter is
+// render-only and must not consume the battle's seeded PRNG. Callers that
+// generate soldier looks pass util.rand explicitly (see sim/defs.js) — those
+// colours are per-soldier identity, still not simulation state.
 const tmpC = new THREE.Color();
 export function col(hex, jitter = 0, rnd = Math.random) {
   tmpC.setHex(hex);

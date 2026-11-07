@@ -6,7 +6,7 @@ import { FireSystem } from './sim/fire.js';
 import { setupDynamics } from './sim/dynamics.js';
 import { randRange, setSeed } from './util.js';
 import { W_BANNER, SH_NONE } from './anim/human.js';
-import { K_INF, K_CAV, commanderLook, TEAM_FLAG } from './sim/defs.js';
+import { K_INF, K_CAV, K_ENG, K_DOG, K_ELE, K_CHR, TYPES, commanderLook, TEAM_FLAG } from './sim/defs.js';
 
 const SPACING = {
   sword: [1.35, 1.55], axe: [1.45, 1.65], mace: [1.45, 1.65], spear: [1.3, 1.5], pike: [1.3, 1.45],
@@ -20,7 +20,8 @@ export const SIZES = { S: 0.4, M: 1, L: 2.2, XL: 5, XXL: 10 };
 class Builder {
   constructor(world, sq, S) {
     this.w = world; this.sq = sq; this.S = S;
-    this.armies = [new Army(0, '軍団'), new Army(1, '東方王国')];
+    const fn = world.factionNames || ['軍団', '東方王国'];
+    this.armies = [new Army(0, fn[0]), new Army(1, fn[1])];
     world.armies = this.armies;
     this.wings = [{}, {}];
     this.cm = 1; // formations narrower (cm < 1) and deeper where the ground is tight
@@ -36,9 +37,13 @@ class Builder {
     const c = Math.max(1, Math.round(cols * scale * cm));
     const r = Math.max(1, Math.round(rows * scale / cm));
     const facing = o.facing !== undefined ? o.facing : team === 0 ? 0 : Math.PI;
-    const [sx, sz] = SPACING[type];
+    // era-pack types fall back to kind-based spacing (foot 1.35/1.55,
+    // horse 3.2/5.2, engines 8/9, beasts 10/10, dogs 2/2.2)
+    const TT = TYPES[type];
+    const [sx, sz] = SPACING[type] || (TT.kind === K_CAV ? [3.2, 5.2] : TT.kind === K_ENG ? [8, 9] : TT.kind === K_DOG ? [2.0, 2.2] : TT.kind === K_ELE || TT.kind === K_CHR ? [10, 10] : [1.35, 1.55]);
     const q = o.q !== undefined ? o.q : 0.5;
     const R = w.addRegiment(new Regiment(w, team, type, c, sx, sz, x, z, facing, name, q));
+    if (TYPES[type] && TYPES[type].feigned) R.feigned = true;
     const p = { x: 0, z: 0 };
     for (let i = 0; i < c * r; i++) {
       const a = new Agent(team, type, R, q);
@@ -50,6 +55,7 @@ class Builder {
       R.agents.push(a);
     }
     R.initial = R.agents.length;
+    R.pairBuddies();
     R.cx = x; R.cz = z; R.alive = R.initial;
     R.slotMap = R.agents.slice();
     // captain in the middle of the front rank, standard bearer behind him
@@ -100,14 +106,20 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   const b = new Builder(world, sq, world.stage.S);
   const st = world.stage;
   world.builder = b;
-  if (st.kind === 'river') river(b, st);
+  // era packs may replace the deployment wholesale (world.eraDeploy is
+  // set by main.js from the two teams' packs; it returns true when it
+  // handled this stage kind, false to fall through to the standard one)
+  const eraHandled = world.eraDeploy ? world.eraDeploy(b, st) : false;
+  if (eraHandled) { /* deployed by the era pack */ }
+  else if (st.kind === 'river') river(b, st);
   else if (st.kind === 'harbor') { harbor(b, st); if (st.id === 'naval') navalMarines(b, st); }
-  else if (st.id === 'camp') camp(b, st);
   else if (st.kind === 'siege') siege(b, st);
   else if (st.id === 'ambush') ambush(b, st);
   else if (st.id === 'canyon' || st.id === 'landslide') field(b, { kx: 0.45, kz: 1.5, cm: 0.55, narrow: true });
   else if (st.id === 'hills') field(b, { hills: true });
   else field(b, {});
+  // era packs may attach dramatic extras (fire ships and the like)
+  if (world.eraStageHooks) for (const h of world.eraStageHooks) h(b, st);
   // fire and dramatic stage dynamics attach to the finished deployment
   if (st.id === 'burnforest' || st.id === 'firestorm') world.fire = new FireSystem(world);
   setupDynamics(world);
@@ -366,43 +378,3 @@ function siege(b, st) {
   b.general(0, 0, -80, 6);
 }
 
-// ------------------------------------------------------------------ camp assault
-// A palisaded camp, small and low: fewer men, the same ladders, ram and gate.
-function camp(b, st) {
-  const C = st.city, L = C.L, S = st.S;
-  b.armies[0].posture = 'assault';
-  b.armies[1].posture = 'defend';
-  const wz = C.z0 + 1.2;
-  // Blue: on the palisade, with reserves among the tents
-  b.reg(1, 'archer', 14, 2, -L * 0.68, wz, '柵上弓兵 西', { wing: '城壁' });
-  b.reg(1, 'archer', 14, 2, L * 0.68, wz, '柵上弓兵 東', { wing: '城壁' });
-  b.reg(1, 'xbow', 8, 2, 0, wz, '門楼弩兵', { wing: '城壁' });
-  b.reg(1, 'axe', 12, 2, -L * 0.3, wz, '柵上守備隊 西', { wing: '城壁', q: 0.5 });
-  b.reg(1, 'axe', 12, 2, L * 0.3, wz, '柵上守備隊 東', { wing: '城壁', q: 0.5 });
-  b.reg(1, 'spear', 12, 4, -6, C.z1 + 12, '門内槍兵', { wing: '城内', role: 'reserve', q: 0.6 });
-  b.reg(1, 'axe', 12, 4, 14, C.z1 + 24, '斧兵', { wing: '城内', role: 'reserve' });
-  b.reg(1, 'mace', 12, 4, -16, C.z1 + 24, '徴募兵', { wing: '城内', role: 'reserve', q: 0.3 });
-  b.reg(1, 'ele', Math.max(2, Math.round(2 * b.sq)), 1, 0, C.z1 + 42, '戦象', { wing: '城内', role: 'reserve', fixed: true });
-  b.officer(1, '城壁', L * 0.2, C.z1 + 8, '城壁将');
-  b.officer(1, '城内', -20, C.z1 + 18, '城内将');
-  b.general(1, 0, C.zb - 24, 4);
-  // Red: the raiders
-  b.reg(0, 'ram', 1, 1, 0, -2, '破城槌', { wing: '中央', fixed: true });
-  b.reg(0, 'sword', 14, 5, -L * 0.55, -14, '第1大隊', { wing: '中央', q: 0.65 });
-  b.reg(0, 'sword', 14, 5, 0, -20, '第2大隊', { wing: '中央', q: 0.65 });
-  b.reg(0, 'sword', 14, 5, L * 0.55, -14, '第3大隊', { wing: '中央', q: 0.65 });
-  b.reg(0, 'archer', 16, 3, -L * 0.8, -2, '弓兵隊 右', { wing: '右翼' });
-  b.reg(0, 'archer', 16, 3, L * 0.8, -2, '弓兵隊 左', { wing: '左翼' });
-  b.reg(0, 'sling', 14, 3, L * 0.28, 2, '投石兵', { wing: '中央' });
-  b.reg(0, 'engineer', 10, 2, -L * 0.4, -30, '梯子隊 I', { wing: '右翼', q: 0.65 });
-  b.reg(0, 'engineer', 10, 2, L * 0.4, -30, '梯子隊 II', { wing: '左翼', q: 0.65 });
-  b.reg(0, 'sword', 14, 5, -L * 0.3, -44, '第4大隊', { wing: '予備', role: 'reserve', q: 0.7 });
-  b.reg(0, 'onager', 2, 1, 0, -50, '投石機隊', { wing: '中央', fixed: true });
-  b.reg(0, 'cav', 8, 3, -L * 1.5, -40, '騎兵', { wing: '予備', role: 'reserve' });
-  b.reg(0, 'dog', 8, 2, L * 1.5, -36, '軍用犬', { wing: '予備', role: 'reserve' });
-  b.officer(0, '右翼', -L * 0.8, -36, '右翼将');
-  b.officer(0, '中央', 0, -34, '中央将');
-  b.officer(0, '左翼', L * 0.8, -36, '左翼将');
-  b.officer(0, '予備', -L * 0.2, -66, '予備将');
-  b.general(0, 0, -76, 6);
-}

@@ -67,6 +67,20 @@ export class StageRenderer {
           roofs.push([(s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75]);
         }
       }
+      if (stage.reskin === 'castle') {
+        // a tenshu keep behind the walls: three plastered tiers, dark roofs
+        const t = stage.structs.find(x => x.type === 'tenshu');
+        if (t) {
+          const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2, w0 = t.x1 - t.x0, d0 = t.z1 - t.z0;
+          let y = 0;
+          for (let k = 0; k < 3; k++) {
+            const wk = w0 * (1 - k * 0.22), dk = d0 * (1 - k * 0.22), hk = k === 2 ? 4.4 : 5;
+            add(cx - wk / 2, y, cz - dk / 2, cx + wk / 2, y + hk, cz + dk / 2, 0xe8e2d2);
+            roofs.push([cx, y + hk, cz, wk * 0.72, 1.8, dk * 0.72]);
+            y += hk;
+          }
+        }
+      }
       // the gate: timber doors under an arch, hidden once broken
       for (const g of stage.gates) {
         const m = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0 - 0.3, H - 1.2, 0.8), new THREE.MeshLambertMaterial({ color: 0x5a3a1e, flatShading: true }));

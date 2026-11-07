@@ -8,6 +8,7 @@
 // enters above 0.25, the drums above 0.35, the lead above 0.55 and the harmony
 // voice above 0.8, all eased smoothly towards the target level.
 import { TRACKS, JINGLES } from './tracks.js';
+import { cosmeticRand } from './util.js'; // noise-offset choice is audio dressing only
 
 const hz = (root, semis) => root * Math.pow(2, semis / 12);
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -291,6 +292,7 @@ export class Music {
     const inst = this.track.leadInstrument;
     if (inst === 'pluck') this.pluck(f, t, dur, g);
     else if (inst === 'chant') this.chant(f, t, dur, g);
+    else if (inst === 'flute') this.flute(f, t, dur, g);
     else this.lead(f, t, dur, g);
   }
 
@@ -359,7 +361,7 @@ export class Music {
     const gn = ctx.createGain();
     gn.gain.setValueAtTime(g, t); gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(flt).connect(gn).connect(this.out);
-    s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.05);
+    s.start(t, cosmeticRand() * 1.5); s.stop(t + dur + 0.05);
   }
   lead(f, t, dur, g = 0.13) {
     const ctx = this.ctx;
@@ -375,6 +377,25 @@ export class Music {
     gn.gain.setValueAtTime(g, t + Math.max(0.04, dur - 0.08));
     gn.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
     o.connect(lp); o2.connect(lp); lp.connect(gn);
+    gn.connect(this.out); gn.connect(this.echo);
+    o.start(t); o2.start(t); lfo.start(t);
+    o.stop(t + dur + 0.1); o2.stop(t + dur + 0.1); lfo.stop(t + dur + 0.1);
+  }
+  // flute (shinobue-ish): sine fundamental with breath noise and a
+  // vibrato that blooms after the attack
+  flute(f, t, dur, g = 0.13) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 2;
+    const g2 = ctx.createGain(); g2.gain.value = 0.25;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 5.6;
+    const lg = ctx.createGain(); lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.01, t + 0.3);
+    lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
+    const gn = ctx.createGain();
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(g, t + 0.06);
+    gn.gain.setValueAtTime(g * 0.9, t + Math.max(0.08, dur - 0.1));
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    o.connect(gn); o2.connect(g2).connect(gn);
     gn.connect(this.out); gn.connect(this.echo);
     o.start(t); o2.start(t); lfo.start(t);
     o.stop(t + dur + 0.1); o2.stop(t + dur + 0.1); lfo.stop(t + dur + 0.1);

@@ -1,5 +1,6 @@
 // Point-sprite particles: dust clouds, blood, sparks. Square pixels on purpose.
 import * as THREE from 'three';
+import { cosmeticRand } from '../util.js'; // render-only particle jitter
 
 const CAP = 12000;
 
@@ -69,37 +70,37 @@ export class FX {
     this.size[i] = size; this.life[i] = life; this.max[i] = life; this.grow[i] = grow; this.grav[i] = grav;
   }
   dust(x, y, z, s = 1) {
-    const c = 0.55 + Math.random() * 0.12;
-    this.spawn(x + (Math.random() - 0.5) * s, y, z + (Math.random() - 0.5) * s,
-      (Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * 0.8,
-      2.5 + Math.random() * 2, 0.7 * s, 0.7 * s, -0.05, c, c * 0.88, c * 0.68, 0.22);
+    const c = 0.55 + cosmeticRand() * 0.12;
+    this.spawn(x + (cosmeticRand() - 0.5) * s, y, z + (cosmeticRand() - 0.5) * s,
+      (cosmeticRand() - 0.5) * 0.8, 0.3 + cosmeticRand() * 0.5, (cosmeticRand() - 0.5) * 0.8,
+      2.5 + cosmeticRand() * 2, 0.7 * s, 0.7 * s, -0.05, c, c * 0.88, c * 0.68, 0.22);
   }
   dustBurst(x, y, z, n, s = 1) {
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * 6.28, sp = (0.5 + Math.random()) * 2 * s;
-      const c = 0.52 + Math.random() * 0.1;
-      this.spawn(x, y, z, Math.cos(a) * sp, 0.4 + Math.random() * 1.2, Math.sin(a) * sp,
-        1.5 + Math.random() * 1.5, 0.5 * s, 0.9 * s, 0.3, c, c * 0.87, c * 0.66, 0.3);
+      const a = cosmeticRand() * 6.28, sp = (0.5 + cosmeticRand()) * 2 * s;
+      const c = 0.52 + cosmeticRand() * 0.1;
+      this.spawn(x, y, z, Math.cos(a) * sp, 0.4 + cosmeticRand() * 1.2, Math.sin(a) * sp,
+        1.5 + cosmeticRand() * 1.5, 0.5 * s, 0.9 * s, 0.3, c, c * 0.87, c * 0.66, 0.3);
     }
   }
   blood(x, y, z, dx, dz, n) {
     for (let i = 0; i < n; i++) {
       this.spawn(x, y, z,
-        dx * (0.5 + Math.random()) + (Math.random() - 0.5) * 1.5, Math.random() * 2, dz * (0.5 + Math.random()) + (Math.random() - 0.5) * 1.5,
-        0.5 + Math.random() * 0.4, 0.07, 0, 9.8, 0.45 + Math.random() * 0.15, 0.02, 0.02, 0.95);
+        dx * (0.5 + cosmeticRand()) + (cosmeticRand() - 0.5) * 1.5, cosmeticRand() * 2, dz * (0.5 + cosmeticRand()) + (cosmeticRand() - 0.5) * 1.5,
+        0.5 + cosmeticRand() * 0.4, 0.07, 0, 9.8, 0.45 + cosmeticRand() * 0.15, 0.02, 0.02, 0.95);
     }
   }
   splash(x, y, z, n) {
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * 6.28, sp = Math.random() * 2;
-      this.spawn(x, y, z, Math.cos(a) * sp, 2 + Math.random() * 3, Math.sin(a) * sp,
-        0.6 + Math.random() * 0.4, 0.18, 0.4, 9.8, 0.8, 0.88, 0.95, 0.7);
+      const a = cosmeticRand() * 6.28, sp = cosmeticRand() * 2;
+      this.spawn(x, y, z, Math.cos(a) * sp, 2 + cosmeticRand() * 3, Math.sin(a) * sp,
+        0.6 + cosmeticRand() * 0.4, 0.18, 0.4, 9.8, 0.8, 0.88, 0.95, 0.7);
     }
   }
   sparks(x, y, z, n) {
     for (let i = 0; i < n; i++) {
-      this.spawn(x, y, z, (Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5,
-        0.18 + Math.random() * 0.15, 0.06, 0, 9.8, 1, 0.9, 0.5, 1);
+      this.spawn(x, y, z, (cosmeticRand() - 0.5) * 5, cosmeticRand() * 3, (cosmeticRand() - 0.5) * 5,
+        0.18 + cosmeticRand() * 0.15, 0.06, 0, 9.8, 1, 0.9, 0.5, 1);
     }
   }
   step(dt) {

@@ -6,7 +6,7 @@
 //   seeds   comma list of seeds           (default: 7)
 //   size    S | M | L | XL | XXL          (default: S)
 //   secs    max simulated seconds per run (default: 420)
-//   mode    annihilate | capture | reinforce | retreat | escort
+//   mode    annihilate | capture | reinforce | escort
 //           (default: annihilate; modes that are not valid for a stage fall
 //           back to annihilate inside the Objective constructor)
 //
@@ -18,11 +18,10 @@
 // decides or the time budget runs out). A stage that throws is reported as
 // ERROR and the sweep continues with the next run.
 //
-// Reproducibility: the sim's seeded PRNG does not cover two Math.random()
-// call sites (ragdoll kick jitter, quadruped phase — see the DETERMINISM
-// FINDING in tools/test.mjs), so this harness pins Math.random() to a seeded
-// mulberry32 and reseeds it from the run's seed, making each stage×seed run
-// reproducible.
+// Reproducibility: the sim is seed-deterministic (all sim-path randomness
+// uses the seeded PRNG in src/util.js and Agent.id is world-local — see
+// tools/test.mjs), so each stage×seed run replays exactly, with no
+// Math.random pin and regardless of sweep order.
 import { World } from '../src/sim/world.js';
 import { Projectiles } from '../src/sim/projectiles.js';
 import { buildStage } from '../src/sim/stage.js';
@@ -48,21 +47,7 @@ if (!stageIds.length || !seeds.length || !SIZES[sizeKey] || !(secs > 0)) {
   process.exit(2);
 }
 
-// Seeded Math.random replacement (mulberry32, as in src/util.js).
-let mrState = 1;
-function seedMathRandom(seed) {
-  mrState = (Math.imul(seed ^ 0x9e3779b9, 2654435761)) | 0;
-  Math.random = () => {
-    mrState = (mrState + 0x6d2b79f5) | 0;
-    let t = mrState;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 function runOne(stageKind, seed) {
-  seedMathRandom(seed);
   const scale = SIZES[sizeKey];
   const stage = buildStage(stageKind, scale);
   setStage(stage);

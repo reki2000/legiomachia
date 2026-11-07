@@ -2,35 +2,33 @@
 // other ways to win:
 //   capture   - hold the marked ground (a flag) against the enemy until the meter is full
 //   reinforce - fresh regiments arrive from the edges of the map while the battle rages
-//   retreat   - the Legion must get enough of its men off the field before time runs out
 import { K_INF, K_ENG } from './defs.js';
 import { S_ALIVE, S_DEAD, S_GONE, isActive } from './agent.js';
 
-export const MODES = { annihilate: '殲滅戦', capture: '拠点占領', reinforce: '増援', retreat: '離脱戦', escort: '輜重護衛' };
+export const MODES = { annihilate: '殲滅戦', capture: '拠点占領', reinforce: '増援', escort: '輜重護衛' };
 
-const TEAMS = ['軍団', '東方王国'];
+const TEAMS = ['軍団', '東方王国'];   // fallback; era packs override via world.factionNames
 const CAPTURE_SECS = 45;        // time to take an undefended point
 const HOLD_LIMIT = 540;         // defenders win by holding out this long (asymmetric stages)
-const RETREAT_NEED = 0.5;       // share of the Legion that must get away
-const RETREAT_LIMIT = 360;
-const ESCORT_LIMIT = 480;       // escort: defenders win by holding the convoy this long
+const ESCORT_LIMIT = 600;       // escort: defenders win by holding the convoy this long (the route is ~500 m ≈ 265 s of pure travel, plus the battle in between)
 const ESCORT_N = 5;             // wagons in the convoy
 
 export class Objective {
   constructor(world, mode, builder) {
     const st = world.stage;
     this.w = world; this.b = builder; this.st = st;
-    // retreating / escorting only make sense on open ground, where both armies can run
-    this.mode = (mode === 'retreat' || mode === 'escort') && st.kind !== 'field' ? 'annihilate' : (MODES[mode] ? mode : 'annihilate');
+    // escorting only makes sense on open ground, where both armies can run.
+    // Unknown modes fall back to annihilate (this is also how old
+    // ?mode=retreat URLs behave since the retreat mode was removed).
+    this.mode = mode === 'escort' && st.kind !== 'field' ? 'annihilate' : (MODES[mode] ? mode : 'annihilate');
     this.point = null; this.exit = null; this.waves = [];
     this.meter = 0;           // capture progress: +1 = the Legion holds the point, -1 = the Kingdom
     this.symmetric = st.kind === 'field';
-    this.escaped = 0; this.initial0 = 0;
+    this.escaped = 0;   // generic "units that left the field" counter (landing/retreat-era bookkeeping kept for status use)
     this.wagons = []; this.wagonTotal = 0; this.wagonEscaped = 0; this.wagonLost = 0; this.wagonExit = null;
     this.result = null;
     if (this.mode === 'capture') this.setupCapture();
     else if (this.mode === 'reinforce') this.setupWaves();
-    else if (this.mode === 'retreat') this.setupRetreat();
     else if (this.mode === 'escort') this.setupEscort();
   }
 
@@ -43,7 +41,7 @@ export class Objective {
     if (st.id === 'village' && st.villageSquare) ({ x, z, r } = st.villageSquare);
     else if (st.kind === 'river') { x = 0; z = st.riverZ(0) + st.river.half + 28; r = 28; }
     else if (st.kind === 'harbor') ({ x, z, r } = st.harbor.square);
-    else if (st.kind === 'siege') { const C = st.city; z = (C.z1 + C.zb) / 2; r = C.camp ? 18 : 24; }
+    else if (st.kind === 'siege') { const C = st.city; z = (C.z1 + C.zb) / 2; r = 24; }
     else if (st.id === 'forest') x = st.forestLaneX || 0;
     this.point = { x, z, r };
   }
@@ -99,34 +97,6 @@ export class Objective {
     for (let team = 0; team < 2; team++) if (arrived[team].length) { w.command.setup(); w.emit('reinforce', { team, names: arrived[team] }); }
   }
 
-  // ------------------------------------------------------------ retreat
-  setupRetreat() {
-    const w = this.w;
-    this.exit = { z: -330, x0: -400, x1: 400 };
-    this.initial0 = 0;
-    for (const r of w.regs) if (r.team === 0 && r.kind !== K_ENG) this.initial0 += r.initial;
-    this.rearguardUntil = 140;
-    // the Kingdom's army starts close on the Legion's heels
-    const dz = -45;
-    for (const r of w.regs) {
-      if (r.team !== 1) continue;
-      r.ax += 0; r.az += dz; r.cz += dz;
-      for (const a of r.agents) { a.z += dz; a.prevZ += dz; a.pz += dz; a.y = w.stage.floorAt(a.x, a.z); }
-    }
-  }
-  isRearguard(reg) {
-    return this.mode === 'retreat' && reg.team === 0 && this.elapsed() < this.rearguardUntil &&
-      (reg.kind !== K_INF || reg.type === 'jav' || reg.type === 'spear');
-  }
-  updateRetreat() {
-    for (const a of this.w.agents) {
-      if (a.team !== 0 || a.state !== S_ALIVE || a.z > this.exit.z || a.riderless || a.kind === K_ENG) continue;
-      if (a.fleeing && a.reg.order === 'rout') continue;
-      a.state = S_GONE;           // off the field
-      this.escaped++;
-    }
-  }
-
   // ------------------------------------------------------------ escort
   setupEscort() {
     const st = this.st, b = this.b, w = this.w;
@@ -145,7 +115,58 @@ export class Objective {
     }
     this.wagonTotal = this.wagons.length;
     this.wagonEscaped = 0; this.wagonLost = 0;
+    this.repositionEscortArmy();
+    // canyon: also push the Kingdom 50 m further up the pass, so the
+    // convoy's screen can form before the meeting engagement starts
+    if (st.canyon) {
+      for (const r of w.regs) {
+        if (r.team !== 1) continue;
+        r.az += 50; r.cz += 50;
+        for (const a of r.agents) { a.z += 50; if (a.prevZ !== undefined) a.prevZ += 50; a.pz += 50; a.y = w.stage.floorAt(a.x, a.z); }
+      }
+    }
     if (w.command) w.command.setup();
+  }
+  // The scenario deploys the Legion as a battle line facing the Kingdom,
+  // which can leave the convoy starting 200 m behind its own army — the
+  // escorts spent the first minutes marching back while cavalry rode
+  // around the flank and killed wagons. On open stages, translate the
+  // whole Legion toward the exit side (the same army-translation trick
+  // other setups use) so its
+  // centre sits on the convoy; the army then advances with the wagons.
+  // Skipped where solid scenery (forest trees, village houses) could swallow
+  // a shifted regiment.
+  repositionEscortArmy() {
+    const st = this.st, w = this.w;
+    if (!['field', 'hills', 'canyon', 'ambush', 'landslide'].includes(st.id)) return;
+    if (!this.wagons.length) return;
+    let wx = 0, wz = 0;
+    for (const a of this.wagons) { wx += a.x; wz += a.z; }
+    wx /= this.wagons.length; wz /= this.wagons.length;
+    const regs = w.regs.filter(r => r.team === 0 && r.type !== 'wagon');
+    if (!regs.length) return;
+    let cx = 0, cz = 0;
+    for (const r of regs) { cx += r.cx; cz += r.cz; }
+    cx /= regs.length; cz /= regs.length;
+    const cl = v => Math.max(-165, Math.min(165, v));
+    // offset the army 55 m toward the enemy side of the convoy, so the
+    // regiments form a screen ahead of the wagons instead of a crowd
+    // mixed in with them (in the canyon neck that crowd collapsed as one)
+    const canyon = !!st.canyon;
+    const ox = canyon ? 0 : 55, oz = canyon ? 55 : 0;
+    const dx = cl(wx - cx + ox), dz = cl(wz - cz + oz);
+    if (Math.hypot(dx, dz) < 60) return;
+    for (const r of regs) {
+      r.ax += dx; r.az += dz; r.cx += dx; r.cz += dz;
+      if (r.px !== undefined) { r.px += dx; r.pz += dz; }
+      for (const a of r.agents) {
+        a.x += dx; a.z += dz;
+        if (a.prevX !== undefined) a.prevX += dx;
+        if (a.prevZ !== undefined) a.prevZ += dz;
+        a.px += dx; a.pz += dz;
+        a.y = w.stage.floorAt(a.x, a.z);
+      }
+    }
   }
   updateEscort() {
     const ex = this.exitDef || this.wagonExit;
@@ -174,24 +195,17 @@ export class Objective {
     dt = this.acc; this.acc = 0;
     if (this.mode === 'capture') this.updateCapture(dt);
     else if (this.mode === 'reinforce') this.updateWaves();
-    else if (this.mode === 'retreat') this.updateRetreat();
     else if (this.mode === 'escort') this.updateEscort();
   }
 
   // c = [Legion men, Kingdom men]; returns { winner, text } once the battle is decided
   check(c) {
     if (this.result) return this.result;
-    const win = (winner, why) => (this.result = { winner, text: `${TEAMS[winner]}の勝利${why ? ' ― ' + why : ''}` });
+    const win = (winner, why) => (this.result = { winner, text: `${(this.w.factionNames || TEAMS)[winner]}の勝利${why ? ' ― ' + why : ''}` });
     if (this.mode === 'capture') {
       if (this.meter >= 1) return win(0, '拠点を占領');
       if (this.meter <= -1) return win(1, '拠点を確保');
       if (!this.symmetric && this.elapsed() > HOLD_LIMIT) return win(1, '拠点を守り抜いた');
-    }
-    if (this.mode === 'retreat' && this.initial0) {
-      const need = Math.ceil(this.initial0 * RETREAT_NEED);
-      if (this.escaped >= need) return win(0, `${this.escaped}名が離脱`);
-      if (this.escaped + c[0] < need) return win(1, '退路を断った');
-      if (this.elapsed() > RETREAT_LIMIT) return win(1, '離脱を阻んだ');
     }
     if (this.mode === 'escort' && this.wagonTotal) {
       const need = Math.ceil(this.wagonTotal / 2);
@@ -200,7 +214,7 @@ export class Objective {
       if (this.elapsed() > ESCORT_LIMIT) return win(1, '輜重を阻んだ');
     }
     if (c[1] === 0) return win(0, '');
-    if (c[0] === 0 && !(this.mode === 'retreat' && this.escaped > 0)) return win(1, '');
+    if (c[0] === 0) return win(1, '');
     return null;
   }
 
@@ -208,17 +222,13 @@ export class Objective {
     const t = this.elapsed();
     const mmss = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
     if (this.mode === 'capture') {
-      const m = this.meter, who = m > 0.02 ? '軍団' : m < -0.02 ? '東方王国' : '中立';
+      const m = this.meter, FN = this.w.factionNames || TEAMS, who = m > 0.02 ? FN[0] : m < -0.02 ? FN[1] : '中立';
       const tail = this.symmetric ? '' : ` ・ 防衛側の勝利まで ${mmss(HOLD_LIMIT - t)}`;
-      return `拠点: ${who} ${Math.round(Math.abs(m) * 100)}% (軍団 ${this.n0 || 0} : 東方 ${this.n1 || 0})${tail}`;
+      return `拠点: ${who} ${Math.round(Math.abs(m) * 100)}% (${FN[0]} ${this.n0 || 0} : ${FN[1]} ${this.n1 || 0})${tail}`;
     }
     if (this.mode === 'reinforce') {
-      const next = this.waves.filter(w => !w.done).map(w => `${TEAMS[w.team]} ${Math.max(0, Math.ceil(w.t - t))}秒`);
+      const next = this.waves.filter(w => !w.done).map(w => `${(this.w.factionNames || TEAMS)[w.team]} ${Math.max(0, Math.ceil(w.t - t))}秒`);
       return next.length ? `次の増援: ${next.slice(0, 2).join(' / ')}` : '増援はすべて到着';
-    }
-    if (this.mode === 'retreat') {
-      const need = Math.ceil((this.initial0 || 1) * RETREAT_NEED);
-      return `離脱 ${this.escaped}/${need} ・ 残り ${mmss(RETREAT_LIMIT - t)}`;
     }
     if (this.mode === 'escort') {
       const need = Math.ceil((this.wagonTotal || ESCORT_N) / 2);

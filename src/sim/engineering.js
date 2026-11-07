@@ -285,13 +285,29 @@ export class Engineering {
     const crew = a.crew.filter(c => c.alive).length;
     const k = crew / T.crew;
     if (T.sub === 'wagon') {
-      if (crew === 0) { a.dspd = 0; a.dh = a.heading; return; }
+      // a wagon whose two drivers are killed is not stranded forever: the
+      // draught team keeps plodding toward the goal at 40% speed (it used
+      // to stop dead, which made two cheap crew kills a guaranteed stall)
+      const crewK = crew === 0 ? 0.4 : 1;
       const goal = a.escortGoal || { x: 260, z: a.z };
       const gx = goal.x, gz = goal.z;
       const d = Math.hypot(gx - a.x, gz - a.z);
+      // hold behind the escort screen: if enemies are within 26 m the wagon
+      // stops and lets its guards clear them, instead of plodding into the
+      // melee (a crewless wagon at 40% speed driving into a fight was the
+      // main way wagons got isolated and ground down)
+      // (fleeing men and single stragglers do not block: the convoy used to
+      // wait forever behind one routed archer after the battle was won)
+      let foes = 0;
+      const n = w.query(a.x, a.z, 30 + a.radius);
+      for (let k = 0; k < n; k++) {
+        const t = w.agents[w.qbuf[k]];
+        if (t.team !== a.team && isActive(t) && !t.fleeing && t.kind !== K_ENG) foes++;
+      }
+      const blocked = foes >= 2;
       const p = w.steerTo(a, gx, gz, 1, dt) || [gx, gz];
       a.dh = Math.atan2(p[0] - a.x, p[1] - a.z);
-      a.dspd = d > 12 ? T.max : d > 0.6 ? T.max * Math.max(0.25, d / 12) : 0;
+      a.dspd = blocked ? 0 : (d > 12 ? T.max : d > 0.6 ? T.max * Math.max(0.25, d / 12) : 0) * crewK;
       for (const c of a.crew) if (c.alive) c.st.push = 1;
       return;
     }
