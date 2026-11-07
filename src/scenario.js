@@ -20,7 +20,8 @@ export const SIZES = { S: 0.4, M: 1, L: 2.2, XL: 5, XXL: 10 };
 class Builder {
   constructor(world, sq, S) {
     this.w = world; this.sq = sq; this.S = S;
-    this.armies = [new Army(0, '軍団'), new Army(1, '東方王国')];
+    const fn = world.factionNames || ['軍団', '東方王国'];
+    this.armies = [new Army(0, fn[0]), new Army(1, fn[1])];
     world.armies = this.armies;
     this.wings = [{}, {}];
     this.cm = 1; // formations narrower (cm < 1) and deeper where the ground is tight
@@ -50,6 +51,7 @@ class Builder {
       R.agents.push(a);
     }
     R.initial = R.agents.length;
+    R.pairBuddies();
     R.cx = x; R.cz = z; R.alive = R.initial;
     R.slotMap = R.agents.slice();
     // captain in the middle of the front rank, standard bearer behind him
@@ -100,7 +102,12 @@ export function buildScenario(world, stageKind, sizeKey = 'M', seed = 7) {
   const b = new Builder(world, sq, world.stage.S);
   const st = world.stage;
   world.builder = b;
-  if (st.kind === 'river') river(b, st);
+  // era packs may replace the deployment wholesale (world.eraDeploy is
+  // set by main.js from the two teams' packs; it returns true when it
+  // handled this stage kind, false to fall through to the standard one)
+  const eraHandled = world.eraDeploy ? world.eraDeploy(b, st) : false;
+  if (eraHandled) { /* deployed by the era pack */ }
+  else if (st.kind === 'river') river(b, st);
   else if (st.kind === 'harbor') { harbor(b, st); if (st.id === 'naval') navalMarines(b, st); }
   else if (st.kind === 'siege') siege(b, st);
   else if (st.id === 'ambush') ambush(b, st);

@@ -49,6 +49,11 @@ export function updateRegiment(w, reg, dt) {
   if (n === 0) { if (!sea) { reg.order = 'dead'; reg.path = null; } return; }
   reg.cx = sx / n; reg.cz = sz / n;
   reg.engaged = eng > n * 0.12;
+  { // veteran aura: each living veteran steadies the regiment slightly
+    let v = 0;
+    for (const a of reg.agents) if (a.stats && a.stats.trait === 'veteran' && isActive(a)) v++;
+    reg.vetAura = Math.min(0.05, v * 0.004);
+  }
   reg.morale = mor / n; reg.stamina = sta / n; reg.fleeFrac = flee / n;
   reg.casualty = 1 - (n + sea) / Math.max(1, reg.initial);
 
@@ -222,10 +227,22 @@ function updateVolley(w, reg, dt) {
 function updateMorale(w, a, dt, rider) {
   const reg = a.reg;
   const fear = a.fear || 0;
-  const target = a.baseMorale + reg.aura - (reg.casualty || 0) * 0.55 - 0.2 * (1 - a.stamina) - fear;
+  // personality (phase 1): traits shift the morale target and the flee /
+  // rally thresholds; veterans steady the whole regiment a little (the
+  // aura is accumulated in updateRegiment); the loyal hold near a living
+  // standard; a buddy's death-rage overrides fear while it burns.
+  const tr = a.stats ? a.stats.trait : '';
+  let target = a.baseMorale + reg.aura + (reg.vetAura || 0) - (reg.casualty || 0) * 0.55 - 0.2 * (1 - a.stamina) - fear;
+  if (tr === 'brave') target += 0.08;
+  else if (tr === 'coward') target -= 0.09;
+  else if (tr === 'berserk') target += 0.14;
+  else if (tr === 'veteran') target += 0.05;
+  else if (tr === 'loyal' && reg.bearer && reg.bearer.state === S_ALIVE) target += 0.10;
+  if (a.rageT > 0) { a.rageT -= dt; target = Math.max(target, 0.85); }
+  const fleeAt = a.kind === K_DOG && a.loyalDog ? 0.02 : tr === 'coward' ? 0.20 : tr === 'brave' ? 0.06 : tr === 'berserk' ? 0.03 : 0.12;
   const rate = target > a.morale ? (a.nearEnemy ? 0.015 : 0.05) : 0.03;
   a.morale += (target - a.morale) * Math.min(1, dt * rate * 3);
-  if (!a.fleeing && a.morale < 0.12 && w.phase === 'battle') {
+  if (!a.fleeing && a.morale < fleeAt && w.phase === 'battle' && !(tr === 'berserk' && a.nearEnemy)) {
     a.fleeing = true;
     w.setTarget(a, null);
     w.emit('flee', a);
@@ -245,6 +262,11 @@ function scanThreats(w, a) {
     if (r.alive > 0 && Math.hypot(r.cx - a.x, r.cz - a.z) < 25) { fear += 0.15; break; }
   }
   if (a.lastHitT > w.time - 3) fear += 0.05;
+  // horses fear fire (phase 1): burning ground nearby spooks them,
+  // scaled by the individual's temperament
+  if (a.kind === K_CAV && a.T.animal === 'horse' && w.fire && w.fire.smokeMulAt(a.x, a.z) < 0.9) {
+    fear += 0.08 * (a.stats.temper === 'nervous' ? 1.6 : a.stats.temper === 'bold' ? 0.5 : 1);
+  }
   a.fear = fear;
 }
 
@@ -356,7 +378,10 @@ export function thinkInf(w, a, dt) {
     if (d <= reach + 0.3 && a.attackCd <= 0 && st.action === ACT_NONE && st.flinch < 0.4 &&
       Math.abs(wrapAngle(a.heading - a.faceH)) < 0.7 && a.weapon !== W_BANNER) {
       const dur = randRange(W.atk[0], W.atk[1]) * (1.15 - a.stamina * 0.15);
-      st.start(ACT_ATTACK, dur, rand() < 0.65 ? 0 : 1);
+      { // swing kind from his personal mix: 0 overhead, 1 thrust, 2 shield-bash
+        const st3 = a.stats.atkStyle, rr = rand();
+        st.start(ACT_ATTACK, dur, rr < st3[0] ? 0 : rr < st3[0] + st3[1] ? 1 : (a.shield ? 2 : 0));
+      }
       a.atkTarget = t;
       a.attackCd = (dur + randRange(0.25, 1.3)) * cdMul;
       a.stamina -= 0.025;
@@ -459,7 +484,13 @@ function rangedThink(w, a, t, W, dt) {
     if (a.shootTarget) a.faceH = Math.atan2(a.shootTarget.x - a.x, a.shootTarget.z - a.z);
     return true;
   }
-  if (a.weapon === W_XBOW && !st.loaded) { st.start(ACT_RELOAD, R.reload * randRange(0.9, 1.2)); st.loaded = true; a.dvx = a.dvz = 0; return true; }
+  if (R.reload && !st.loaded) {
+    st.start(ACT_RELOAD, R.reload * randRange(0.9, 1.2)); st.loaded = true; a.dvx = a.dvz = 0;
+    // long-reload guns rotate ranks after firing (the three-rank volley
+    // drill): the fired man steps back and a loaded man comes up
+    if (R.reload >= 6 && reg.slotMap && !a.skirmish && rand() < 0.85) rotateRank(w, a);
+    return true;
+  }
   const noAmmo = R.ammo && a.ammo <= 0;
   if (noAmmo) return false;                          // javelin men fight with their last spear
   if (t && a.tdist < 2.5) return false;               // enemy on top of us: sidearm
@@ -524,7 +555,16 @@ export function actionEvent(w, a, act) {
     const t = a.atkTarget;
     const W = WEAPONS[a.weapon];
     if (t && isActive(t) && w.distTo(a, t) < W.reach + a.radius + t.radius + 0.6 && w.sameLevel(a, t)) {
-      w.resolveMelee(a, a.x, a.z, t, a.weapon, a.dmgMul, false);
+      if (a.st.actionKind === 2 && a.shield) {
+        // shield-bash: little damage, but it shoves and rattles the target
+        w.resolveMelee(a, a.x, a.z, t, a.weapon, a.dmgMul * 0.35, false);
+        if (t.kind === K_INF && t.state === S_ALIVE) {
+          const dx = t.x - a.x, dz = t.z - a.z, l = Math.hypot(dx, dz) || 1;
+          t.vx += dx / l * 3.2; t.vz += dz / l * 3.2; w.moraleHit(t, -0.03);
+        }
+      } else {
+        w.resolveMelee(a, a.x, a.z, t, a.weapon, a.dmgMul, false);
+      }
     }
     return;
   }
@@ -535,12 +575,26 @@ export function actionEvent(w, a, act) {
   const oy = a.y + 1.5;
   if (act === ACT_SHOOT) {
     if (a.weapon === W_XBOW) { w.fireMissile(a.x + fx, oy - 0.1, a.z + fz, t, false, a.team, P_BOLT, a.dmgMul); a.st.loaded = false; }
+    else if (WEAPONS[a.weapon].ranged && WEAPONS[a.weapon].ranged.proj !== undefined && WEAPONS[a.weapon].gun) { w.fireMissile(a.x + fx, oy, a.z + fz, t, false, a.team, WEAPONS[a.weapon].ranged.proj, a.dmgMul); a.st.loaded = false; }
     else w.fireMissile(a.x + fx, oy, a.z + fz, t, a.volleyShot, a.team, P_ARROW, a.dmgMul);
   } else if (act === ACT_THROW) {
     w.fireMissile(a.x + fx, oy + 0.3, a.z + fz, t, false, a.team, P_JAV, a.dmgMul);
     a.ammo--;
   } else if (act === ACT_SLING) {
     w.fireMissile(a.x + fx, oy + 0.4, a.z + fz, t, false, a.team, P_STONE, a.dmgMul);
+  }
+  // firearms (era packs): a shot booms and smokes — nearby enemies take
+  // a morale shock, amplified against packs marked as gun-shy (the
+  // "unknown weapon" coefficient lives on the VICTIM side's world flag)
+  if (act === ACT_SHOOT && WEAPONS[a.weapon].gun) {
+    w.emit('gunshot', a);
+    if (w.fx && w.fx.smokePuff) w.fx.smokePuff(a.x + fx * 2, oy, a.z + fz * 2, 3);
+    const shock = 0.045 * ((w.unknownShock && w.unknownShock[1 - a.team]) || 1);
+    for (const e of w.agents) {
+      if (e.team === a.team || e.state !== S_ALIVE || e.kind === K_ENG) continue;
+      const d = Math.hypot(e.x - a.x, e.z - a.z);
+      if (d < 22) w.moraleHit(e, -shock * (1 - d / 26));
+    }
   }
   if (!a.target) a.shootTarget = null;
 }
@@ -573,7 +627,7 @@ export function thinkCav(w, a, dt) {
   // horses shy away from camels
   if (T.animal === 'horse' && (a.id + w.stepN) % 20 === 0) {
     for (const r of w.camelRegs[1 - a.team] || []) {
-      if (r.alive > 0 && Math.hypot(r.cx - a.x, r.cz - a.z) < 22) { if (rand() < 0.3) a.q.rear = 1; a.morale -= 0.02; a.dspd *= 0.7; break; }
+      if (r.alive > 0 && Math.hypot(r.cx - a.x, r.cz - a.z) < 22) { const tf = a.stats.temper === 'nervous' ? 1.6 : a.stats.temper === 'bold' ? 0.5 : 1; if (rand() < 0.3 * tf) a.q.rear = 1; a.morale -= 0.02 * tf; a.dspd *= 0.7; break; }
     }
   }
   if (T.commander) { thinkCommander(w, a, dt); return; }
@@ -693,7 +747,7 @@ function riderCombat(w, a, c, dt) {
   const t = w.nearestEnemy(a, R);
   if (!t || w.distTo(a, t) > W.reach + 0.35 + a.radius + t.radius + 0.2) { c.cd = 0.25; return; }
   const dur = randRange(W.atk[0], W.atk[1]);
-  c.st.start(ACT_ATTACK, dur, rand() < 0.5 ? 0 : 1);
+  c.st.start(ACT_ATTACK, dur, rand() < (c.stats ? c.stats.atkStyle[0] : 0.5) ? 0 : 1);
   c.target = t;
   c.cd = dur + randRange(0.2, 0.9);
 }
@@ -758,7 +812,7 @@ export function thinkEle(w, a, dt) {
   const reg = a.reg, T = a.T;
   for (let i = 1; i < a.crew.length; i++) crewArchery(w, a, a.crew[i], dt, T.range);
   a.rage = approach(a.rage, a.mode === 'charge' || a.mode === 'panic' ? 1 : 0, dt * 0.7);
-  if (a.mode !== 'panic' && (a.hp < a.maxHp * 0.3 || (!a.crew[0].alive && rand() < dt * 0.1))) {
+  if (a.mode !== 'panic' && (a.hp < a.maxHp * 0.3 || (!a.crew[0].alive && rand() < dt * 0.1 * (a.stats.temper === 'nervous' ? 1.7 : a.stats.temper === 'bold' ? 0.45 : 1)))) {
     a.mode = 'panic'; a.modeT = 0; w.emit('trumpet', a);
   }
   if (a.mode === 'panic') {

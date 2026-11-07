@@ -7,7 +7,7 @@ import { col } from '../render/segments.js';
 import { rand, randNormal, clamp } from '../util.js';
 
 export const K_INF = 0, K_CAV = 1, K_ELE = 2, K_CHR = 3, K_DOG = 4, K_ENG = 5;
-export const P_ARROW = 0, P_JAV = 1, P_STONE = 2, P_BOLT = 3, P_ROCK = 4;
+export const P_ARROW = 0, P_JAV = 1, P_STONE = 2, P_BOLT = 3, P_ROCK = 4, P_BULLET = 5;
 
 // reach in metres beyond body radii; dmg range; attack duration range
 export const WEAPONS = {
@@ -54,14 +54,42 @@ export const SHIELD_FOR = {
   0: { sword: SH_RECT, spear: SH_RECT, axe: SH_ROUND, mace: SH_ROUND, jav: SH_SMALL, engineer: SH_NONE, pike: SH_NONE },
   1: { sword: SH_ROUND, spear: SH_ROUND, axe: SH_ROUND, mace: SH_SMALL, jav: SH_SMALL, engineer: SH_NONE, pike: SH_SMALL },
 };
+// Era packs bring their own shield tables per faction; main.js installs
+// the active pair per battle (default = SHIELD_FOR, the ancient game).
+let activeShields = [SHIELD_FOR[0], SHIELD_FOR[1]];
+export function setActiveShields(a, b) { activeShields = [a || SHIELD_FOR[0], b || SHIELD_FOR[1]]; }
+export function shieldFor(team, type) {
+  const m = activeShields[team];
+  if (m && type in m) return m[type];
+  return (SHIELD_FOR[team] && SHIELD_FOR[team][type]) || SH_NONE;
+}
 
 // ---- individual soldiers ----
 // quality: 0 = levy, 0.5 = regular, 1 = veteran
+// One personality trait per soldier (phase-1 individuality). The trait
+// feeds ai.js morale/flee/rally and the buddy reaction; '' means none.
+export const TRAITS = ['', 'brave', 'coward', 'berserk', 'veteran', 'loyal'];
+export const TRAIT_NAMES = { brave: '勇敢', coward: '臆病', berserk: '狂戦士的', veteran: '老練', loyal: '忠実' };
+function rollTrait(q) {
+  const r = rand();
+  if (r < 0.52) return '';
+  if (r < 0.64) return 'brave';
+  if (r < 0.74) return 'coward';
+  if (r < 0.82) return 'berserk';
+  if (r < 0.91) return 'veteran';
+  return 'loyal';
+}
+
 export function genStats(quality) {
   const q = quality;
   // wide spread: some men are visibly small, some are giants
   const size = clamp(1 + randNormal() * 0.075, 0.8, 1.24);
   const r = v => Math.round(clamp(v, 5, 99));
+  // personal attack mix: overhead / thrust / shield-bash weights
+  const atk = [0.3 + rand() * 0.55, 0.15 + rand() * 0.5, 0.05 + rand() * 0.3];
+  const asum = atk[0] + atk[1] + atk[2];
+  // animal temperament (used by mounts/elephants/dogs; harmless on men)
+  const tr = rand();
   return {
     size,
     str: r(45 + q * 22 + randNormal() * 18 + (size - 1) * 110),
@@ -69,29 +97,66 @@ export function genStats(quality) {
     vit: r(46 + q * 18 + randNormal() * 18 + (size - 1) * 60),
     def: r(38 + q * 32 + randNormal() * 17),
     mor: r(40 + q * 34 + randNormal() * 19),
+    trait: rollTrait(q),
+    atkStyle: [atk[0] / asum, atk[1] / asum, atk[2] / asum],
+    lefty: rand() < 0.10,
+    temper: tr < 0.5 ? 'calm' : tr < 0.75 ? 'nervous' : 'bold',
   };
 }
 
 const NAMES = {
   0: {
-    a: ['マルクス', 'ガイウス', 'ルキウス', 'ティトゥス', 'クィントゥス', 'プブリウス', 'グナエウス', 'アウルス', 'デキムス', 'セルウィウス', 'セクストゥス', 'スプリウス', 'マニウス', 'ヌメリウス'],
-    b: ['ユリウス', 'コルネリウス', 'ウァレリウス', 'クラウディウス', 'ファビウス', 'アエミリウス', 'リキニウス', 'センプロニウス', 'トゥッリウス', 'ユニウス', 'オクタウィウス', 'フラウィウス', 'ポンペイウス', 'セルギウス', 'ドミティウス'],
+    a: ['マルクス', 'ガイウス', 'ルキウス', 'ティトゥス', 'クィントゥス', 'プブリウス', 'グナエウス', 'アウルス', 'デキムス', 'セルウィウス', 'セクストゥス', 'スプリウス', 'マニウス', 'ヌメリウス', 'アッピウス', 'カエソ', 'ウァレリウス', 'ホスティウス', 'ウォルカティウス', 'アグリッパ', 'ドルスス', 'ゲルマニクス', 'カエサル', 'アントニウス', 'ブルトゥス', 'カッシウス', 'キケロ', 'カト', 'スキピオ', 'ファビウス', 'マルケッルス', 'グラックス', 'スッラ', 'マリウス', 'ポンペイウス', 'レピドゥス', 'クラッスス', 'ルクッルス', 'セルトリウス', 'アエティウス'],
+    b: ['ユリウス', 'コルネリウス', 'ウァレリウス', 'クラウディウス', 'ファビウス', 'アエミリウス', 'リキニウス', 'センプロニウス', 'トゥッリウス', 'ユニウス', 'オクタウィウス', 'フラウィウス', 'ポンペイウス', 'セルギウス', 'ドミティウス', 'カッシウス', 'アントニウス', 'カルプルニウス', 'ホルテンシウス', 'パピリウス', 'クィンクティウス', 'セルウィリウス', 'アティリウス', 'マンリウス', 'ポルキウス', 'リウィウス', 'アクィリウス', 'フルウィウス', 'プラウティウス', 'スルピキウス', 'アンニウス', 'バエビウス', 'カエキリウス', 'ドミティウス', 'エグナティウス', 'フォンテイウス', 'グラニウス', 'ヘレンニウス', 'ユウェンティウス', 'ラエリウス'],
   },
   1: {
-    a: ['アルサケス', 'ダレイオス', 'キュロス', 'バガダテス', 'ミトラダテス', 'ティリダテス', 'アルタバノス', 'オロンテス', 'ファルナケス', 'ヒュダルネス', 'マザイオス', 'スピタメネス', 'ポロス', 'チャンドラ'],
-    b: ['アルタクセルクセス', 'ベッソス', 'ロクサネス', 'サトラペス', 'ヴィシュタスパ', 'アリオバルザネス', 'オクシュアルテス', 'ナルセス', 'バフラーム', 'シャープール'],
+    a: ['アルサケス', 'ダレイオス', 'キュロス', 'バガダテス', 'ミトラダテス', 'ティリダテス', 'アルタバノス', 'オロンテス', 'ファルナケス', 'ヒュダルネス', 'マザイオス', 'スピタメネス', 'ポロス', 'チャンドラ', 'クセルクセス', 'アルタクセルクセス', 'カンビュセス', 'ヒュスタスペス', 'メガバゾス', 'アルタフェルネス', 'ダティス', 'マルドニオス', 'アルタバゾス', 'ティッサフェルネス', 'ファルナバゾス', 'メムノン', 'ベッソス', 'アルトオンス', 'オクシアトレッス', 'パルメニオス', 'アンティゴノス', 'セレウコス', 'プトレマイオス', 'アンティオコス', 'デメトリオス', 'リシュマコス', 'カッサンドロス', 'ペルディッカス', 'エウメネス', 'クラテロス'],
+    b: ['アルタクセルクセス', 'ベッソス', 'ロクサネス', 'サトラペス', 'ヴィシュタスパ', 'アリオバルザネス', 'オクシュアルテス', 'ナルセス', 'バフラーム', 'シャープール', 'ホスロー', 'ペルディッカス', 'アルゲイオス', 'マケドニオス', 'バクトリオス', 'ソグディアノス', 'アラコシオス', 'ヒュルカニオス', 'パルティオス', 'メディオス', 'ペルシコス', 'アルメニオス', 'カッパドキオス', 'リディオス', 'フリギオス', 'キリキオス', 'シュリオス', 'エグプティオス', 'インドス', 'スキティオス', 'トラキオス', 'イリオス', 'バビュロニオス', 'エラム', 'スーサ', 'エクバタナ', 'ペルセポリス', 'パサルガダエ', 'サルディス', 'タクシラ'],
   },
 };
-export function genName(team) {
-  const N = NAMES[team] || NAMES[0];
-  return N.a[Math.floor(rand() * N.a.length)] + '・' + N.b[Math.floor(rand() * N.b.length)];
+// Nicknames: ~1 in 6 men carries one; some are look-linked (the look flag
+// is applied by the Agent when it builds its look).
+export const NICKNAMES = [
+  ['隻眼', 'eyepatch'], ['赤毛', 'redhair'], ['大男', null], ['小男', null],
+  ['禿頭', 'bald'], ['傷痕', null], ['早足', null], ['鉄拳', null],
+  ['熊', null], ['狐', null], ['沈黙', null], ['笑顔', null],
+  ['雷', null], ['岩', null], ['若様', null], ['老師', null],
+];
+// Era packs register extra name pools here (see src/eras/); the active
+// pair is chosen per battle by setActiveNames before the scenario is
+// built, so name generation stays inside the seeded stream.
+export const NAME_SETS = { rome0: NAMES[0], rome1: NAMES[1] };
+let activeNames = [NAMES[0], NAMES[1]];
+export function setActiveNames(keyA, keyB) {
+  activeNames = [NAME_SETS[keyA] || NAMES[0], NAME_SETS[keyB] || NAMES[1]];
 }
+export function registerNameSet(key, set) { if (!NAME_SETS[key]) NAME_SETS[key] = set; }
+
+export function genNameFull(team) {
+  const N = activeNames[team] || activeNames[0];
+  let name = N.a[Math.floor(rand() * N.a.length)] + '・' + N.b[Math.floor(rand() * N.b.length)];
+  let look = null;
+  if (rand() < 0.16) {
+    const [nick, flag] = NICKNAMES[Math.floor(rand() * NICKNAMES.length)];
+    name += '「' + nick + '」';
+    look = flag;
+  }
+  return { name, look };
+}
+export function genName(team) { return genNameFull(team).name; }
 
 // ---- looks ----
 function jit(hex, j = 0.08) { return col(hex, j, rand); }
 const pick = a => a[Math.floor(rand() * a.length)];
 
+let activeLooks = [null, null];
+export function setActiveLooks(a, b) { activeLooks = [a || null, b || null]; }
 export function humanLook(team, role) {
+  const fn = activeLooks[team];
+  if (fn) { const L = fn(team, role); if (L) return L; }
+  return baseHumanLook(team, role);
+}
+function baseHumanLook(team, role) {
   const L = {
     skin: jit(pick([0xc99a78, 0xb98663, 0xa87552, 0xd6a986]), 0.05),
     tunic: null, sleeve: null, legs: null, helm: 0, helmCol: jit(0x8f9098), crest: null,
@@ -121,7 +186,30 @@ export function humanLook(team, role) {
   }
   L.sleeve = L.tunic;
   L.hips = L.tunic.map(v => v * 0.72);
+  // ---- individuality (phase 1): hair / beard / crest / build / grime ----
+  L.hair = rand() < 0.28 ? 0 : 1 + Math.floor(rand() * 3);      // 0 bald, 1 short, 2 long-ish, 3 topknot-ish cap
+  L.hairCol = jit(pick([0x2a1c12, 0x4a2f1a, 0x6a4a28, 0x8a6a3a, 0xb09a78, 0x3a3a3a]));
+  L.beard = rand() < 0.38;
+  L.beardCol = L.hairCol;
+  L.crestScale = (0.75 + rand() * 0.55);                          // crest size varies per man
+  L.shoulder = (0.92 + rand() * 0.22);                           // torso top width factor
+  L.belly = (0.95 + rand() * 0.23);                              // torso bottom width factor
+  L.armorBase = L.armor; L.tunicBase = L.tunic;                 // pristine colours; bodies.js darkens copies by HP
+  L.grime = -1;                                                 // last applied grime step (render cache)
+  L.emblemCol = null; L.emblemShape = 0;                        // set per regiment by the Agent
+  L.eyepatch = false;
   return L;
+}
+
+// Shield emblems: a regiment gets a pattern (shape + colour) from its
+// faction palette, keyed by regiment id so a whole regiment matches.
+export const EMBLEMS = {
+  0: [0xf0e0c0, 0xd8b040, 0x30303a, 0xe8e8f0, 0x7a1a14, 0xf0c040],
+  1: [0xf0e0c0, 0x2a6ab0, 0xd8b040, 0x30303a, 0x7ab0e8, 0xe8e8f0],
+};
+export function emblemFor(team, regId) {
+  const pal = EMBLEMS[team] || EMBLEMS[0];
+  return { col: pal[regId % pal.length], shape: Math.floor(regId / pal.length) % 3 };
 }
 
 // officers & standard bearers stand out
@@ -142,6 +230,10 @@ export function horseLook(team, barding) {
     coat: jit(coat, 0.06), mane: jit(coat === 0xb8b0a0 ? 0x9a9088 : 0x1e1612),
     hoof: jit(0x2a2420), cloth: jit(team === 0 ? 0xa02a22 : 0x2a4a8a), trim: jit(team === 0 ? 0xd8b040 : 0xd0c090),
     barding: barding ? jit(team === 0 ? 0x8a8a92 : 0xb0985a, 0.05) : null,
+    // markings (phase 1): white socks, a face blaze, or a spotted flank
+    socks: rand() < 0.3 ? jit(0xe8e2d4, 0.03) : null,
+    blaze: rand() < 0.25 ? jit(0xe8e2d4, 0.03) : null,
+    spots: rand() < 0.12 ? jit(coat === 0xb8b0a0 ? 0x4a3a30 : 0xd8d0c0, 0.04) : null,
   };
 }
 export function camelLook(team) {

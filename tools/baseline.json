@@ -1,8 +1,8 @@
 {
-  "c0": 114,
-  "c1": 193,
-  "r0": 222,
-  "r1": 193,
+  "c0": 155,
+  "c1": 196,
+  "r0": 183,
+  "r1": 209,
   "tolerance": 3,
   "config": {
     "stage": "field",
@@ -11,5 +11,5 @@
     "mode": "annihilate",
     "secs": 90
   },
-  "note": "Recorded with tools/test.mjs, which pins Math.random to a seeded PRNG (see the DETERMINISM FINDING in that file). The unpinned sim is not seed-reproducible."
+  "note": "Recorded with tools/test.mjs. The sim is seed-deterministic (all sim-path randomness uses the seeded PRNG in src/util.js); no Math.random pin is used or needed."
 }

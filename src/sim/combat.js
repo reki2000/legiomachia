@@ -46,6 +46,7 @@ export function resolveMelee(w, att, ax, az, t, weapon, dmgMul, mounted) {
         }
       }
       let dmg = randRange(W.dmg[0], W.dmg[1]) * dmgMul * (facing < -0.3 ? 1.5 : 1);
+      if (att && att.droppedWeapon) dmg *= 0.45;   // fighting empty-handed
       if (W.closeDist && !mounted && l < W.closeDist) dmg *= W.closeMul;
       if (facing < -0.3) w.moraleHit(t, -0.05);
       w.damageInf(t, dmg, dx, dz, mounted ? 3.2 : 2.2, att, W.knock);
@@ -65,6 +66,11 @@ export function resolveMelee(w, att, ax, az, t, weapon, dmgMul, mounted) {
   }
 export function damageInf(w, t, dmg, dx, dz, force, att, knock = 0) {
     t.hp -= dmg;
+    // a heavily wounded man may fumble his weapon away (phase 1): he
+    // fights on at reduced effect with the weapon hidden from his hand
+    if (!t.droppedWeapon && t.hp > 0 && t.hp < t.maxHp * 0.22 && t.kind === K_INF && rand() < 0.22) {
+      t.droppedWeapon = true; if (t.st) t.st.hideW = true;
+    }
     t.lastHitT = w.time;
     if (w.fx) w.fx.blood(t.x, t.y + 1.2, t.z, dx * 1.5, dz * 1.5, dmg > 40 ? 8 : 4);
     w.moraleHit(t, -0.02);
@@ -291,6 +297,23 @@ export function impact(w, a, b, relv, nx, nz) {
   }
 export function killInf(w, a, vx, vy, vz, ix, iy, iz, topple) {
     if (a.state === S_DEAD || a.state === S_GONE) return;
+    // buddy reaction (phase 1): the surviving partner flies into a rage
+    // or breaks, weighted by his trait. Emitted as a world event so the
+    // results-screen timeline can tell the story.
+    const bd = a.buddy;
+    if (bd && !a.buddyGone && bd.state === S_ALIVE && !bd.fleeing) {
+      a.buddyGone = true;
+      const tr = bd.stats.trait;
+      const pRage = tr === 'berserk' ? 0.9 : tr === 'brave' ? 0.75 : tr === 'loyal' ? 0.65 : tr === 'veteran' ? 0.6 : tr === 'coward' ? 0.25 : 0.5;
+      if (rand() < pRage) {
+        bd.rageT = 25; bd.morale = Math.max(bd.morale, 0.8);
+        w.emit('buddy', { a: bd, dead: a, kind: 'rage' });
+      } else {
+        bd.morale = Math.max(0.02, bd.morale - 0.38);
+        if (rand() < 0.55) { bd.fleeing = true; w.setTarget(bd, null); }
+        w.emit('buddy', { a: bd, dead: a, kind: 'break' });
+      }
+    }
     if (!a.rag) {
       if (a.state === S_GETUP && a.blendFrom) a.joints.set(a.blendFrom);
       else w.poseForRagdoll(a);

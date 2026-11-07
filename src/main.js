@@ -233,7 +233,14 @@ $('sMode').onchange = reload;
 $('sSeed').onchange = reload;
 $('sDiff').onchange = reload;
 $('bReset').onclick = reload;
-$('cPerf').onchange = e => { $('perfHud').hidden = !e.target.checked; };
+$('cPerf').onchange = e => { $('perfHud').hidden = !e.target.checked; $('hud').classList.toggle('perf-on', e.target.checked); };
+// keep --bar equal to the control bar's real height: bottom-anchored panels
+// (minimap, help, selection, perf HUD) are positioned from it, so any change in
+// the bar's height (coarse-pointer padding, font metrics, wrapping) moves them
+// with it instead of letting the bar slide underneath them
+const syncBar = () => document.documentElement.style.setProperty('--bar', $('controls').offsetHeight + 'px');
+new ResizeObserver(syncBar).observe($('controls'));
+syncBar();
 $('bCloseResults').onclick = () => { $('results').hidden = true; };
 $('bRematch').onclick = () => { location.href = buildShareURL(); };
 $('bCopy').onclick = async () => {
@@ -728,6 +735,8 @@ requestAnimationFrame(frame);
 // debug handle for headless tests
 window.__battle = {
   world, rig, camera, renderer, startBattle, stage, sound,
+  // adaptive-quality state for headless tests (quality itself is module-scope)
+  qualityInfo: () => ({ quality, fpsEMA, pixelRatio: renderer.getPixelRatio(), poseSkip: bodies.poseSkip || 1 }),
   advance(sec) { const n = Math.round(sec / simStep); const t = performance.now(); for (let i = 0; i < n; i++) world.update(simStep); return (performance.now() - t) / n; },
   view(x, z, dist, pitch, yaw) { rig.setMode('free'); rig.target.set(x, 0, z); rig.dist = dist; rig.pitch = pitch; if (yaw !== undefined) rig.yaw = yaw; rig.first = true; },
 };

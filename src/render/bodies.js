@@ -10,7 +10,9 @@ import { K_INF, K_CAV, K_ELE, K_CHR, K_DOG, K_ENG, TEAM_FLAG } from '../sim/defs
 import { S_ALIVE, S_DOWN, S_GETUP, S_DEAD, S_GONE } from '../sim/agent.js';
 import { computeMount, computeCrew, CHARIOT_CAR_Z, CHARIOT_HORSE_Z, CHARIOT_HORSE_X } from '../sim/mounts.js';
 import { col } from './segments.js';
+import { clamp } from '../util.js';
 
+const C_DARK = col(0x14100c);
 const C_STRING = col(0xe8e0c8);
 const C_ARROW = col(0x8a6a40);
 const C_ROPE = col(0x5a4630);
@@ -52,7 +54,7 @@ export function emitHuman(S, j, L, weapon, shield, hideWeapon, nocked, lod, extr
   const fl = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
   fx /= fl; fy /= fl; fz /= fl;
 
-  taper.seg(px, py, pz, nx, ny, nz, rx, ry, rz, 0.42, 0.25, L.armor);
+  taper.seg(px, py, pz, nx, ny, nz, rx, ry, rz, 0.42 * (L.belly || 1), 0.25 * (L.shoulder || 1), L.armor);
   box.seg(nx, ny, nz, hx, hy, hz, rx, ry, rz, 0.19, 0.22, L.skin);
   if (lod === 2) {
     box.seg(j[9], j[10], j[11], j[15], j[16], j[17], fx, fy, fz, 0.1, 0.1, L.sleeve);
@@ -86,8 +88,8 @@ export function emitHuman(S, j, L, weapon, shield, hideWeapon, nocked, lod, extr
   if (L.helm === 1) {
     cyl.seg(hx - hdx * 0.13, hy - hdy * 0.13, hz - hdz * 0.13, hx + hdx * 0.02, hy + hdy * 0.02, hz + hdz * 0.02, rx, ry, rz, 0.25, 0.27, L.helmCol);
     if (lod === 0 && L.crest) {
-      if (L.bigCrest) box.seg(hx - fx * 0.05, hy - fy * 0.05, hz - fz * 0.05, hx + hdx * 0.18, hy + hdy * 0.18, hz + hdz * 0.18, rx, ry, rz, 0.06, 0.34, L.crest);
-      else box.seg(hx, hy, hz, hx + hdx * 0.09, hy + hdy * 0.09, hz + hdz * 0.09, rx, ry, rz, 0.035, 0.24, L.crest);
+      if (L.bigCrest) box.seg(hx - fx * 0.05, hy - fy * 0.05, hz - fz * 0.05, hx + hdx * 0.18, hy + hdy * 0.18, hz + hdz * 0.18, rx, ry, rz, 0.06, 0.34 * (L.crestScale || 1), L.crest);
+      else box.seg(hx, hy, hz, hx + hdx * 0.09, hy + hdy * 0.09, hz + hdz * 0.09, rx, ry, rz, 0.035, 0.24 * (L.crestScale || 1), L.crest);
     }
   } else if (L.helm === 2) {
     cyl.seg(hx - hdx * 0.12, hy - hdy * 0.12, hz - hdz * 0.12, hx, hy, hz, rx, ry, rz, 0.25, 0.26, L.helmCol);
@@ -97,6 +99,15 @@ export function emitHuman(S, j, L, weapon, shield, hideWeapon, nocked, lod, extr
     cyl.seg(hx - hdx * 0.08, hy - hdy * 0.08, hz - hdz * 0.08, hx + hdx * 0.02, hy + hdy * 0.02, hz + hdz * 0.02, rx, ry, rz, 0.23, 0.24, L.helmCol);
   } else if (L.helm === 4) {
     cyl.seg(hx - hdx * 0.06, hy - hdy * 0.06, hz - hdz * 0.06, hx + hdx * 0.03, hy + hdy * 0.03, hz + hdz * 0.03, rx, ry, rz, 0.22, 0.22, L.helmCol);
+  }
+  if (lod === 0) {
+    // hair where no helm covers it, beard, eyepatch (phase 1 looks)
+    if (L.helm === 0 && L.hair) {
+      box.seg(hx - hdx * 0.04, hy - hdy * 0.04, hz - hdz * 0.04, hx + hdx * 0.1, hy + hdy * 0.1, hz + hdz * 0.1, rx, ry, rz, 0.21, 0.2, L.hairCol);
+      if (L.hair === 3) cyl.seg(hx + hdx * 0.1, hy + hdy * 0.1, hz + hdz * 0.1, hx + hdx * 0.2, hy + hdy * 0.2, hz + hdz * 0.2, rx, ry, rz, 0.07, 0.07, L.hairCol);
+    }
+    if (L.beard) box.seg(hx + fx * 0.09 - hdx * 0.03, hy + fy * 0.09 - hdy * 0.03, hz + fz * 0.09 - hdz * 0.03, hx + fx * 0.11 - hdx * 0.16, hy + fy * 0.11 - hdy * 0.16, hz + fz * 0.11 - hdz * 0.16, rx, ry, rz, 0.14, 0.09, L.beardCol);
+    if (L.eyepatch) box.seg(hx - rx * 0.1 + fx * 0.1, hy - ry * 0.1 + fy * 0.1, hz - rz * 0.1 + fz * 0.1, hx + rx * 0.1 + fx * 0.1, hy + ry * 0.1 + fy * 0.1, hz + rz * 0.1 + fz * 0.1, hdx, hdy, hdz, 0.055, 0.03, C_DARK);
   }
   if (L.cape && lod < 2) {
     const ax = nx - fx * 0.13, ay = ny - fy * 0.13, az = nz - fz * 0.13;
@@ -196,8 +207,16 @@ export function emitHuman(S, j, L, weapon, shield, hideWeapon, nocked, lod, extr
       const dmt = shield === SH_SMALL ? 0.56 : 0.86;
       cyl.seg(ax, ay, az, ax + sx * 0.06, ay + sy * 0.06, az + sz * 0.06, ux, uy, uz, dmt, dmt, L.shield);
       if (lod === 0) cyl.seg(ax + sx * 0.06, ay + sy * 0.06, az + sz * 0.06, ax + sx * 0.1, ay + sy * 0.1, az + sz * 0.1, ux, uy, uz, 0.18, 0.18, L.shieldRim);
+      // regiment emblem: a painted disc on the boss (phase 1)
+      if (lod === 0 && L.emblemCol) cyl.seg(ax + sx * 0.1, ay + sy * 0.1, az + sz * 0.1, ax + sx * 0.13, ay + sy * 0.13, az + sz * 0.13, ux, uy, uz, L.emblemShape === 1 ? 0.3 : 0.2, L.emblemShape === 1 ? 0.3 : 0.2, L.emblemCol);
     } else {
       box.seg(ax, ay, az, ax + sx * 0.07, ay + sy * 0.07, az + sz * 0.07, rx, ry, rz, 0.64, 1.05, L.shield);
+      // regiment emblem plate: square / vertical bar / horizontal band
+      if (lod === 0 && L.emblemCol) {
+        const hw = [0.13, 0.05, 0.26][L.emblemShape] || 0.13, vt = [0.3, 0.44, 0.13][L.emblemShape] || 0.3;
+        const cxp = ax + sx * 0.085, cyp = ay + sy * 0.085, czp = az + sz * 0.085;
+        box.seg(cxp - rx * hw, cyp - ry * hw, czp - rz * hw, cxp + rx * hw, cyp + ry * hw, czp + rz * hw, ux, uy, uz, vt, 0.03, L.emblemCol);
+      }
       if (lod === 0) cyl.seg(ax + sx * 0.07, ay + sy * 0.07, az + sz * 0.07, ax + sx * 0.11, ay + sy * 0.11, az + sz * 0.11, ux, uy, uz, 0.16, 0.16, L.shieldRim);
     }
   }
@@ -219,6 +238,17 @@ export function emitQuad(S, j, L, B, P, cloth, lod) {
     jseg(box, j, Q.NECK, Q.NECKMID, rx, ry, rz, W.neck[0], W.neck[1], L.coat);
     jseg(box, j, Q.NECKMID, Q.POLL, rx, ry, rz, W.neck[0] * 0.9, W.neck[1] * 0.8, L.coat);
   } else jseg(taper, j, Q.POLL, Q.NECK, rx, ry, rz, W.neck[0], W.neck[1], L.barding || L.coat);
+  if (lod === 0 && L.blaze) {
+    // face blaze: a pale stripe down the front of the head
+    const m = Q.MUZZLE * 3;
+    box.seg(j[m] - B.fx * 0.04, j[m + 1] - B.fy * 0.04, j[m + 2] - B.fz * 0.04, j[m] + B.fx * 0.1 + B.ux * 0.12, j[m + 1] + B.fy * 0.1 + B.uy * 0.12, j[m + 2] + B.fz * 0.1 + B.uz * 0.12, rx, ry, rz, 0.07, 0.05, L.blaze);
+  }
+  if (lod === 0 && L.spots) {
+    // spotted flank patch
+    const c = Q.CENTER * 3;
+    box.seg(j[c] + rx * W.body[1] * 0.4 - B.fx * 0.22, j[c + 1] + 0.05, j[c + 2] + rz * W.body[1] * 0.4 - B.fz * 0.22,
+      j[c] + rx * W.body[1] * 0.4 + B.fx * 0.22, j[c + 1] + 0.05, j[c + 2] + rz * W.body[1] * 0.4 + B.fz * 0.22, B.ux, B.uy, B.uz, 0.34, 0.05, L.spots);
+  }
   if (P.hump) {
     const c = Q.CENTER * 3;
     box.seg(j[c] + B.ux * 0.2 - B.fx * 0.45, j[c + 1] + B.uy * 0.2 - B.fy * 0.45, j[c + 2] + B.uz * 0.2 - B.fz * 0.45,
@@ -237,7 +267,7 @@ export function emitQuad(S, j, L, B, P, cloth, lod) {
   for (let k = 0; k < 4; k++) {
     const i0 = Q.FL0 + k * 3;
     jseg(box, j, i0, i0 + 1, rx, ry, rz, W.leg1[0], W.leg1[1], L.barding && k < 2 ? L.barding : L.coat);
-    jseg(box, j, i0 + 1, i0 + 2, rx, ry, rz, W.leg2[0], W.leg2[1], L.coat);
+    jseg(box, j, i0 + 1, i0 + 2, rx, ry, rz, W.leg2[0], W.leg2[1], L.socks || L.coat);
     if (lod === 0) {
       const h = (i0 + 2) * 3;
       box.seg(j[h], j[h + 1] - P.hoofY, j[h + 2], j[h], j[h + 1] + P.hoofY * 0.8, j[h + 2], rx, ry, rz, W.hoof, W.hoof * 1.1, L.hoof);
@@ -466,6 +496,18 @@ export class BodyRenderer {
           a.poseValid = false;
         } else if (a.rag) { j = a.rag.x; a.poseValid = false; }
         const nocked = st2.action === ACT_SHOOT && st2.actionT > 0.1 && st2.actionT < 0.8;
+        // wounded gait + blood/mud grime (phase 1): limp follows HP, and
+        // armour/tunic darken in two steps as the man is cut up
+        st2.limp = a.state === S_ALIVE ? clamp(1 - a.hp / a.maxHp, 0, 1) ** 1.5 : 0;
+        {
+          const L = a.look, step = a.hp > a.maxHp * 0.66 ? 0 : a.hp > a.maxHp * 0.33 ? 1 : 2;
+          if (L.grime !== step && L.armorBase) {
+            L.grime = step;
+            const ka = [1, 0.78, 0.55][step], kt = [1, 0.88, 0.7][step];
+            L.armor = L.armorBase.map(v => v * ka);
+            L.tunic = L.tunicBase.map(v => v * kt); L.sleeve = L.tunic;
+          }
+        }
         emitHuman(S, j, a.look, a.weapon, a.shield, weaponHidden(st2, a.weapon), nocked, a.state === S_ALIVE ? lod : Math.min(lod, 1), st2);
         if (a.carry && a.state === S_ALIVE) { /* ladders drawn by the stage renderer */ }
         if (dist < 160) {

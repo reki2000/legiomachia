@@ -14,6 +14,7 @@ export const J = {
 export const NJ = 18;
 
 export const W_SWORD = 0, W_SPEAR = 1, W_BOW = 2, W_AXE = 3, W_MACE = 4, W_PIKE = 5,
+  W_GUN = 12, W_HANDGUN = 13, W_LANCE = 14, W_FIRELANCE = 15, W_FLAME = 16,   // era-pack weapons (phase 2+)
   W_JAV = 6, W_SLING = 7, W_XBOW = 8, W_HAMMER = 9, W_BANNER = 10, W_NONE = 11;
 export const SH_NONE = 0, SH_ROUND = 1, SH_RECT = 2, SH_SMALL = 3;
 export const SEAT_GROUND = 0, SEAT_RIDE = 1, SEAT_STAND = 2, SEAT_ROW = 3; // ROW: an oarsman on his bench (st.rowPh drives the stroke)
@@ -23,7 +24,7 @@ export const ACT_NONE = 0, ACT_ATTACK = 1, ACT_BLOCK = 2, ACT_SHOOT = 3, ACT_CHE
 
 // weapon -> pose family
 const G_ONE = 0, G_SPEAR = 1, G_BOW = 2, G_PIKE = 3, G_JAV = 4, G_SLING = 5, G_XBOW = 6, G_BANNER = 7, G_NONE = 8;
-const GROUP = [G_ONE, G_SPEAR, G_BOW, G_ONE, G_ONE, G_PIKE, G_JAV, G_SLING, G_XBOW, G_ONE, G_BANNER, G_NONE];
+const GROUP = [G_ONE, G_SPEAR, G_BOW, G_ONE, G_ONE, G_PIKE, G_JAV, G_SLING, G_XBOW, G_ONE, G_BANNER, G_NONE, G_XBOW, G_XBOW, G_SPEAR, G_SPEAR, G_XBOW];
 export const ONE_HANDED = w => GROUP[w] === G_ONE;
 
 export const ATTACK_EVT = 0.47, SHOOT_EVT = 0.78, THROW_EVT = 0.52, SLING_EVT = 0.78, WORK_EVT = 0.5;
@@ -52,6 +53,8 @@ export class AnimState {
     this.action = ACT_NONE; this.actionT = 0; this.actionDur = 1; this.actionKind = 0; this.actionEvt = false;
     this.flinch = 0; this.lean = 0; this.aimPitch = 0.5; this.aimYaw = 0;
     this.carry = 0; this.push = 0; this.climb = 0; this.climbPh = 0; this.swim = 0; this.point = 0;
+    this.lefty = false;   // weapon in the left hand (pose mirrors the arm IK, sim untouched)
+    this.limp = 0;        // 0..1 wounded gait, set by the renderer from HP each frame
     this.hideW = false; this.loaded = true;
     this.scale = randRange(0.93, 1.07);
     this.armAmp = randRange(0.8, 1.2);
@@ -188,8 +191,9 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
     ik2(L, J.LKNEE * 3, J.LFOOT * 3, L[27], L[28], L[29], L[33], L[34], L[35], thigh, shin, -0.6, 0, 1);
   } else {
     const stanceW = 0.11 * s + 0.07 * cb + 0.05 * work;
-    footTarget(ph % 1, duty, A, lift, mdx, mdz, stanceW, -0.17 * cb - 0.05 * draw + 0.25 * work, J.RFOOT);
-    footTarget((ph + 0.5) % 1, duty, A, lift, mdx, mdz, -stanceW, 0.2 * cb + 0.12 * draw - 0.2 * work, J.LFOOT);
+    const limp = st.limp || 0;
+    footTarget(ph % 1, duty, A * (1 - 0.45 * limp), lift * (1 - 0.55 * limp), mdx, mdz, stanceW, -0.17 * cb - 0.05 * draw + 0.25 * work, J.RFOOT);
+    footTarget((ph + 0.5 + 0.04 * limp) % 1, duty, A, lift, mdx, mdz, -stanceW, 0.2 * cb + 0.12 * draw - 0.2 * work, J.LFOOT);
     if (climb > 0) {
       // rungs: feet alternate stepping up in front of the body
       const cp = st.climbPh;
@@ -355,6 +359,10 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
   }
 
   if (hasShield) {
+    if (act === ACT_ATTACK && st.actionKind === 2) {
+      const b = Math.sin(Math.PI * Math.min(1, at * 1.4));
+      mixRel(lh, J.LSHO, 0.02, 0.12, 0.55, b); mixTo(sn, 0, 0.1, 1, b);
+    }
     const small = shield === SH_SMALL;
     rel(lh, J.LSHO, -0.03, -0.33 + 0.1 * run, 0.24 + armL * 0.3);
     mixRel(lh, J.LSHO, 0.1, -0.22, 0.38, cb);
@@ -440,6 +448,16 @@ export function poseHuman(out, st, weapon, shield, seat, B) {
   }
   norm(sn);
   setL(J.SHN, L[hl] + sn[0] * 0.12, L[hl + 1] + sn[1] * 0.12, L[hl + 2] + sn[2] * 0.12);
+
+  // left-handed men: mirror the finished local pose across the sagittal
+  // plane and swap the L/R joint slots — weapon lands in the left hand,
+  // shield in the right, and nothing in the sim ever knows
+  if (st.lefty) {
+    for (let i = 0; i < NJ; i++) L[i * 3] = -L[i * 3];
+    for (const [a, b] of [[J.LSHO, J.RSHO], [J.LELB, J.RELB], [J.LHAND, J.RHAND], [J.LHIP, J.RHIP], [J.LKNEE, J.RKNEE], [J.LFOOT, J.RFOOT]]) {
+      for (let k = 0; k < 3; k++) { const t = L[a * 3 + k]; L[a * 3 + k] = L[b * 3 + k]; L[b * 3 + k] = t; }
+    }
+  }
 
   // ---- to world ----
   const { ox, oy, oz, rx, ry, rz, ux, uy, uz, fx, fy, fz } = B;

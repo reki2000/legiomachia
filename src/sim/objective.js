@@ -7,7 +7,7 @@ import { S_ALIVE, S_DEAD, S_GONE, isActive } from './agent.js';
 
 export const MODES = { annihilate: '殲滅戦', capture: '拠点占領', reinforce: '増援', escort: '輜重護衛' };
 
-const TEAMS = ['軍団', '東方王国'];
+const TEAMS = ['軍団', '東方王国'];   // fallback; era packs override via world.factionNames
 const CAPTURE_SECS = 45;        // time to take an undefended point
 const HOLD_LIMIT = 540;         // defenders win by holding out this long (asymmetric stages)
 const ESCORT_LIMIT = 600;       // escort: defenders win by holding the convoy this long (the route is ~500 m ≈ 265 s of pure travel, plus the battle in between)
@@ -201,7 +201,7 @@ export class Objective {
   // c = [Legion men, Kingdom men]; returns { winner, text } once the battle is decided
   check(c) {
     if (this.result) return this.result;
-    const win = (winner, why) => (this.result = { winner, text: `${TEAMS[winner]}の勝利${why ? ' ― ' + why : ''}` });
+    const win = (winner, why) => (this.result = { winner, text: `${(this.w.factionNames || TEAMS)[winner]}の勝利${why ? ' ― ' + why : ''}` });
     if (this.mode === 'capture') {
       if (this.meter >= 1) return win(0, '拠点を占領');
       if (this.meter <= -1) return win(1, '拠点を確保');
@@ -222,12 +222,12 @@ export class Objective {
     const t = this.elapsed();
     const mmss = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
     if (this.mode === 'capture') {
-      const m = this.meter, who = m > 0.02 ? '軍団' : m < -0.02 ? '東方王国' : '中立';
+      const m = this.meter, FN = this.w.factionNames || TEAMS, who = m > 0.02 ? FN[0] : m < -0.02 ? FN[1] : '中立';
       const tail = this.symmetric ? '' : ` ・ 防衛側の勝利まで ${mmss(HOLD_LIMIT - t)}`;
-      return `拠点: ${who} ${Math.round(Math.abs(m) * 100)}% (軍団 ${this.n0 || 0} : 東方 ${this.n1 || 0})${tail}`;
+      return `拠点: ${who} ${Math.round(Math.abs(m) * 100)}% (${FN[0]} ${this.n0 || 0} : ${FN[1]} ${this.n1 || 0})${tail}`;
     }
     if (this.mode === 'reinforce') {
-      const next = this.waves.filter(w => !w.done).map(w => `${TEAMS[w.team]} ${Math.max(0, Math.ceil(w.t - t))}秒`);
+      const next = this.waves.filter(w => !w.done).map(w => `${(this.w.factionNames || TEAMS)[w.team]} ${Math.max(0, Math.ceil(w.t - t))}秒`);
       return next.length ? `次の増援: ${next.slice(0, 2).join(' / ')}` : '増援はすべて到着';
     }
     if (this.mode === 'escort') {

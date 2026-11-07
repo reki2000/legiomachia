@@ -680,7 +680,7 @@ export class World {
     let tx = t.x, tz = t.z;
     const ty = t.y + (t.kind === K_INF ? 1.1 : 1.6);
     let theta = 0.5, v = 50;
-    const vLow = type === P_JAV ? 24 : type === P_STONE ? 46 : type === P_BOLT ? 72 : type === P_ROCK ? 45 : 55;
+    const vLow = type === P_JAV ? 24 : type === P_STONE ? 46 : type === P_BOLT ? 72 : type === P_ROCK ? 45 : type === 5 ? 95 : 55;   // 5 = P_BULLET (flat and fast)
     for (let it = 0; it < 2; it++) {
       const D = Math.max(1, Math.hypot(tx - ox, tz - oz));
       const H = ty - oy;

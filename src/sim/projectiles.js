@@ -1,7 +1,8 @@
 // Ballistic missiles in flat typed arrays (ring buffer).
 import { groundHeight, waterLevel } from '../terrain.js';
-import { P_ARROW, P_JAV, P_STONE, P_BOLT, P_ROCK } from './defs.js';
+import { P_ARROW, P_JAV, P_STONE, P_BOLT, P_ROCK, P_BULLET } from './defs.js';
 import { col } from '../render/segments.js';
+import { cosmeticRand } from '../util.js';
 
 const CAP = 10000;
 const STUCK_LIFE = 35;
@@ -13,6 +14,7 @@ export const PROJ = {
   [P_STONE]: { len: 0.07, w: 0.07, dmg: [18, 40], shield: 0.9, stick: false, col: col(0x8a8478), drag: 0.0, knock: 0.08 },
   [P_BOLT]: { len: 0.45, w: 0.03, dmg: [45, 85], shield: 0.55, stick: true, col: col(0x5a4a30), drag: 0.0 },
   [P_ROCK]: { len: 0.55, w: 0.55, dmg: [60, 140], shield: 0, stick: false, col: col(0x9a948a), drag: 0.0, splash: 3.2 },
+  [P_BULLET]: { len: 0.05, w: 0.05, dmg: [55, 100], shield: 0.3, stick: false, col: col(0x2a2a2a), drag: 0.0, knock: 0.1 },
 };
 
 export class Projectiles {
@@ -64,7 +66,9 @@ export class Projectiles {
         if (ty === P_ROCK) { world.rockImpact(nx, gy, nz, v[j], v[j + 2], this.team[i]); f[i] = 2; age[i] = STUCK_LIFE - 20; v[j] = 0; v[j + 1] = 1; v[j + 2] = 0; continue; }
         if (!PROJ[ty].stick || gy < WL - 0.3) { f[i] = 0; if (world.fx && gy < WL) world.fx.splash(nx, WL, nz, 3); continue; }
         f[i] = 2; age[i] = 0;
-        if (world.fx && Math.random() < 0.3) world.fx.dust(nx, gy + 0.1, nz, 0.4);
+        // cosmeticRand: this gate only decides whether a dust puff is drawn;
+        // it never touches simulation state, so it stays off the seeded PRNG
+        if (world.fx && cosmeticRand() < 0.3) world.fx.dust(nx, gy + 0.1, nz, 0.4);
       }
     }
     this.flying = flying;
