@@ -65,6 +65,8 @@ The world is a height field plus a raster of man-made floors (walls are plateaus
 
 `src/eras/` — a pack swaps factions, unit/weapon tables, deployments, stage reskins and the BGM track. China and Europe are three eras each, every era reusing the previous one plus its difference. Firearms stop at matchlock level.
 
+Names and buildings follow the era too: each army's soldiers are named from its own pack's pools, in that culture's format (family-first for Japan/China/Korea, epithets for Mongols/Norse/Carthaginians, era nicknames), and architecture follows the battlefield — a pack scenario's reskin (castle, Constantinople, lake city…) brings its own building style (roofs, tower caps, keeps, wall bands in `src/render/arch.js`); any other stage takes the active era's style (team 1's pack in a dream match).
+
 | Pack | id | Contents |
 |---|---|---|
 | 古代ローマ | `rome` | The default game: Legion vs Eastern Kingdom. Identity pack — the snapshot baseline is this battle. |

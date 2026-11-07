@@ -17,9 +17,16 @@ import { fieldArmy } from './deploy.js';
 
 const jit = (hex, j = 0.05) => col(hex, j, rand);
 const CN_A = ['子房', '子長', '子敬', '子明', '子龍', '子揚', '子均', '子布', '子瑜', '子遠', '子廉', '子義', '子幹', '子仲', '子初', '子豐', '子山', '子林', '子平', '子安', '子寧', '子定', '子成', '子文', '子武', '子徳', '子仁', '子信', '子忠', '子孝', '子礼', '子智', '子勇', '子剛', '子強', '子勝', '子威', '子震', '子業', '子基'];
-const CN_B = ['劉', '曹', '孫', '趙', '関', '張', '馬', '黄', '諸葛', '司馬', '周', '呂', '袁', '董', '李', '王', '陳', '徐', '郭', '荀', '賈', '程', '典', '許', '夏侯', '太史', '甘', '淩', '陸', '魯', '韓', '魏', '呉', '蜀', '秦', '漢', '楚', '燕', '斉', '晋'];
-registerNameSet('china0', { a: CN_A, b: CN_B });
-registerNameSet('china1', { a: [...CN_A].reverse(), b: [...CN_B].reverse() });
+const CN_B = ['劉', '曹', '孫', '趙', '関', '張', '馬', '黄', '諸葛', '司馬', '周', '呂', '袁', '董', '李', '王', '陳', '徐', '郭', '荀', '賈', '程', '典', '許', '夏侯', '太史', '甘', '淩', '陸', '魯', '韓', '楊', '朱', '林', '何', '高', '梁', '鄭', '謝', '唐'];
+const CN_B2 = ['趙', '銭', '孫', '李', '周', '呉', '鄭', '王', '馮', '陳', '褚', '衛', '蔣', '沈', '韓', '楊', '朱', '秦', '尤', '許', '何', '呂', '施', '張', '孔', '曹', '厳', '華', '金', '魏', '陶', '姜', '戚', '謝', '鄒', '喩', '柏', '水', '竇', '章'];
+registerNameSet('china0', {
+  order: 'ba',
+  nick: [['隻眼', 'eyepatch'], ['赤毛', 'redhair'], ['禿頭', 'bald'], ['独眼龍', null], ['千里馬', null], ['臥龍', null], ['虎痴', null], ['飛将', null], ['神射', null], ['巨漢', null], ['疾風', null], ['岩', null], ['老師', null], ['若将', null], ['沈黙', null], ['笑顔', null]],
+  a: CN_A, b: CN_B });
+registerNameSet('china1', {
+  order: 'ba',
+  nick: [['隻眼', 'eyepatch'], ['赤毛', 'redhair'], ['禿頭', 'bald'], ['独眼龍', null], ['千里馬', null], ['臥龍', null], ['虎痴', null], ['飛将', null], ['神射', null], ['巨漢', null], ['疾風', null], ['岩', null], ['老師', null], ['若将', null], ['沈黙', null], ['笑顔', null]],
+  a: [...CN_A].reverse(), b: CN_B2 });
 
 function look(team, role) {
   const L = baseHumanLook(0, 'spear');
@@ -68,7 +75,7 @@ export const chinaEarly = {
   id: 'china-early', name: '中国・戦国〜漢',
   factions: [{ name: '漢軍', names: 'china0' }, { name: '楚軍', names: 'china1' }],
   types: TYPES_EARLY, weapons: {}, shields: SHIELDS_CN, look,
-  scenario: deployEarly, reskin: {}, track: 'china-early',
+  scenario: deployEarly, arch: 'china', reskin: {}, track: 'china-early',
 };
 
 // ------------------------------------------------------------ CN2 mid (adds to early)
@@ -129,7 +136,7 @@ export const chinaMid = {
   id: 'china-mid', name: '中国・三国〜唐',
   factions: [{ name: '魏軍', names: 'china0' }, { name: '呉軍', names: 'china1' }],
   types: TYPES_MID, weapons: WEAPONS_MID, shields: SHIELDS_CN, look,
-  scenario: deployMid, stageHook: redCliffs, reskin: {}, track: 'china-mid',
+  scenario: deployMid, stageHook: redCliffs, arch: 'china', reskin: {}, track: 'china-mid',
 };
 
 // ------------------------------------------------------------ CN3 late (adds to mid)
@@ -169,5 +176,5 @@ export const chinaLate = {
   id: 'china-late', name: '中国・宋〜元明', advancedArms: true,
   factions: [{ name: '宋軍', names: 'china0' }, { name: '明軍', names: 'china1' }],
   types: TYPES_LATE, weapons: WEAPONS_LATE, shields: SHIELDS_CN, look,
-  scenario: deployLate, reskin: {}, track: 'china-late',
+  scenario: deployLate, arch: 'china', reskin: {}, track: 'china-late',
 };

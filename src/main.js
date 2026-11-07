@@ -14,6 +14,7 @@ import { buildScenario, SIZES } from './scenario.js';
 import { CameraRig } from './camera.js';
 import { K_INF, K_ENG, TYPES, WEAPONS, TRAIT_NAMES } from './sim/defs.js';
 import { ERA_LIST, eraById, applyEraTables, composeEra } from './eras/index.js';
+import { RESKIN_ARCH } from './render/arch.js';
 import { Sound } from './sound.js';
 import { Weather, WEATHER } from './weather.js';
 import { Objective, MODES } from './sim/objective.js';
@@ -100,10 +101,18 @@ composeEra(world, packA, packB);
 if (params.get('scenario') === 'nightraid') world.nightRaid = true;
 buildScenario(world, stageKind, sizeKey, seedVal);
 // era reskins that the deploy itself does not set (japan's castle sets its own)
+let archPack = packA;
 if (!stage.reskin && world.eraPacks) {
-  const rk = (packA.reskin || {})[stageKind] || (packA.reskin || {})[stage.kind] || (packB.reskin || {})[stageKind];
-  if (rk) stage.reskin = rk;
+  const rkA = (packA.reskin || {})[stageKind] || (packA.reskin || {})[stage.kind];
+  const rk = rkA || (packB.reskin || {})[stageKind];
+  if (rk) { stage.reskin = rk; if (!rkA) archPack = packB; }
 }
+// Architecture follows the battlefield's culture, not the teams: a
+// reskin imposed by a pack scenario (castle / constantinople / lake
+// city...) brings that pack's architecture with it; any other stage —
+// including the era-neutral original stages — takes the architecture
+// of the active era selection (team 1's pack in a dream match).
+stage.arch = (stage.reskin && RESKIN_ARCH[stage.reskin]) || archPack.arch || 'rome';
 if (world.factionNames) { $('fn0').textContent = world.factionNames[0]; $('fn1').textContent = world.factionNames[1]; }
 world.command.setup();
 world.objective = new Objective(world, MODES[params.get('mode')] ? params.get('mode') : 'annihilate', world.builder);

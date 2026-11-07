@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { rand, setSeed } from '../util.js';
 import { col } from './segments.js';
+import { ARCH } from './arch.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const C_RED_FLAG = col(0xc03030), C_BLUE_FLAG = col(0x3a5ac8), C_NEUTRAL = col(0xcfc8b0);
@@ -16,11 +17,29 @@ export class StageRenderer {
     scene.add(this.group);
     setSeed(777);
     const boxes = []; // [cx, cy, cz, sx, sy, sz, color, rotY]
-    const roofs = [], tents = [], tentsBig = [];
+    const roofs = [], tents = [], tentsBig = [], cones = [], domes = [];
     const add = (x0, y0, z0, x1, y1, z1, c) => boxes.push([(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, c]);
+    // architecture style of the battlefield's culture (see arch.js)
+    const A = this.A = ARCH[stage.arch] || ARCH.rome;
+    this.cones = cones; this.domes = domes;
+    // one roof over a building: profile and colour come from the style.
+    // w/d arrive pre-scaled (footprint * 0.75) as the cone list expects.
+    const roofAt = this.roofAt = (cx, y, cz, w, h, d, kind) => {
+      const k = kind || A.roofKind;
+      if (k === 'flat') {
+        add(cx - w * 0.7, y - 0.05, cz - d * 0.7, cx + w * 0.7, y + 0.3, cz + d * 0.7, A.roof);
+        add(cx - w * 0.72, y + 0.3, cz - d * 0.72, cx + w * 0.72, y + 0.62, cz - d * 0.58, A.roof);
+        add(cx - w * 0.72, y + 0.3, cz + d * 0.58, cx + w * 0.72, y + 0.62, cz + d * 0.72, A.roof);
+        add(cx - w * 0.72, y + 0.3, cz - d * 0.58, cx - w * 0.58, y + 0.62, cz + d * 0.58, A.roof);
+        add(cx + w * 0.58, y + 0.3, cz - d * 0.58, cx + w * 0.72, y + 0.62, cz + d * 0.58, A.roof);
+        return;
+      }
+      if (k === 'hip') add(cx - w * 0.74, y - 0.14, cz - d * 0.74, cx + w * 0.74, y + 0.1, cz + d * 0.74, A.roof);
+      roofs.push([cx, y, cz, w, h, d, k]);
+    };
     this.gateMeshes = [];
     this.bridgeGroups = new Map();
-    const stoneC = [0x9a8f7a, 0x958a74, 0xa39884], woodC = [0x7a5a38, 0x6e4e2e, 0x84643e];
+    const stoneC = A.wall, woodC = [0x7a5a38, 0x6e4e2e, 0x84643e];
     if (stage.city) {
       const C = stage.city, H = C.H;
       for (const s of stage.structs) {
@@ -43,6 +62,7 @@ export class StageRenderer {
           (s.big ? tentsBig : tents).push([(s.x0 + s.x1) / 2, 0, (s.z0 + s.z1) / 2, s.x1 - s.x0, s.h, s.z1 - s.z0]);
         } else if (s.type === 'wall') {
           add(s.x0, -2, s.z0, s.x1, H, s.z1, c);
+          if (A.band) add(s.x0, H - 0.4, s.z0, s.x1, H + 0.03, s.z1, A.band);
           // crenellations along the outer edges
           const alongX = s.x1 - s.x0 > s.z1 - s.z0;
           if (alongX) {
@@ -53,37 +73,27 @@ export class StageRenderer {
             for (let z = s.z0 + 0.5; z < s.z1 - 0.5; z += 2.2) add(outer, H, z, outer + 0.5, H + 1.1, z + 1.1, c);
           }
         } else if (s.type === 'tower') {
-          add(s.x0, -2, s.z0, s.x1, H + 0.05, s.z1, 0x8c8270);
-          for (let k = 0; k < 4; k++) {
-            add(s.x0 + k * 2.2, H, s.z0, s.x0 + k * 2.2 + 1.2, H + 1.8, s.z0 + 0.6, 0x8c8270);
-            add(s.x0, H, s.z0 + k * 2.2, s.x0 + 0.6, H + 1.8, s.z0 + k * 2.2 + 1.2, 0x8c8270);
-            add(s.x1 - 0.6, H, s.z0 + k * 2.2, s.x1, H + 1.8, s.z0 + k * 2.2 + 1.2, 0x8c8270);
+          add(s.x0, -2, s.z0, s.x1, H + 0.05, s.z1, A.tower);
+          const tcx = (s.x0 + s.x1) / 2, tcz = (s.z0 + s.z1) / 2, tw = s.x1 - s.x0;
+          if (A.towerCap === 'cone') cones.push([tcx, H + 0.05, tcz, tw * 0.66, 3.4]);
+          else if (A.towerCap === 'dome') domes.push([tcx, H + 0.05, tcz, tw * 0.6, 2.2]);
+          else if (A.towerCap === 'hip') roofAt(tcx, H + 0.05, tcz, tw * 0.72, 1.9, tw * 0.72, 'hip');
+          else if (A.towerCap === 'crenel') for (let k = 0; k < 4; k++) {
+            add(s.x0 + k * 2.2, H, s.z0, s.x0 + k * 2.2 + 1.2, H + 1.8, s.z0 + 0.6, A.tower);
+            add(s.x0, H, s.z0 + k * 2.2, s.x0 + 0.6, H + 1.8, s.z0 + k * 2.2 + 1.2, A.tower);
+            add(s.x1 - 0.6, H, s.z0 + k * 2.2, s.x1, H + 1.8, s.z0 + k * 2.2 + 1.2, A.tower);
           }
         } else if (s.type === 'ramp') {
           for (let k = 0; k < 8; k++) add(s.x0 + k * 2, -1, s.z0, s.x0 + k * 2 + 2, H * (k + 1) / 8, s.z1, 0x8a8070);
         } else if (s.type === 'house') {
-          const hc = [0xc8b898, 0xb8a888, 0xd0c0a0][Math.floor(rand() * 3)];
+          const hc = A.house[Math.floor(rand() * A.house.length)];
           add(s.x0, -1, s.z0, s.x1, s.h, s.z1, hc);
-          roofs.push([(s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75]);
-        }
-      }
-      if (stage.reskin === 'castle') {
-        // a tenshu keep behind the walls: three plastered tiers, dark roofs
-        const t = stage.structs.find(x => x.type === 'tenshu');
-        if (t) {
-          const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2, w0 = t.x1 - t.x0, d0 = t.z1 - t.z0;
-          let y = 0;
-          for (let k = 0; k < 3; k++) {
-            const wk = w0 * (1 - k * 0.22), dk = d0 * (1 - k * 0.22), hk = k === 2 ? 4.4 : 5;
-            add(cx - wk / 2, y, cz - dk / 2, cx + wk / 2, y + hk, cz + dk / 2, 0xe8e2d2);
-            roofs.push([cx, y + hk, cz, wk * 0.72, 1.8, dk * 0.72]);
-            y += hk;
-          }
+          roofAt((s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75);
         }
       }
       // the gate: timber doors under an arch, hidden once broken
       for (const g of stage.gates) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0 - 0.3, H - 1.2, 0.8), new THREE.MeshLambertMaterial({ color: 0x5a3a1e, flatShading: true }));
+        const m = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0 - 0.3, H - 1.2, 0.8), new THREE.MeshLambertMaterial({ color: A.gateDoor, flatShading: true }));
         m.position.set((g.x0 + g.x1) / 2, (H - 1.2) / 2, g.z0 + 0.6);
         const lint = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, 1.4, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: 0x8c8270, flatShading: true }));
         lint.position.set((g.x0 + g.x1) / 2, H - 0.7, (g.z0 + g.z1) / 2);
@@ -91,7 +101,7 @@ export class StageRenderer {
         bands.position.set((g.x0 + g.x1) / 2, 1.5, g.z0 + 0.6);
         const bands2 = bands.clone(); bands2.position.y = 4;
         // stone filling the wall thickness around the doors, so the wall looks solid until the gate falls
-        const body = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, H + 2, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: C.camp ? 0x7a5a38 : 0x9a8f7a, flatShading: true }));
+        const body = new THREE.Mesh(new THREE.BoxGeometry(g.x1 - g.x0, H + 2, g.z1 - g.z0), new THREE.MeshLambertMaterial({ color: C.camp ? 0x7a5a38 : (A.gateBody || 0x9a8f7a), flatShading: true }));
         body.position.set((g.x0 + g.x1) / 2, (H - 2) / 2, (g.z0 + g.z1) / 2);
         const merl = [];
         for (let x = g.x0 + 0.5; x < g.x1 - 0.5; x += 2.2) {
@@ -107,20 +117,55 @@ export class StageRenderer {
       }
     }
     if (stage.trees && stage.trees.length) this.buildForest(stage.trees);
-    if (stage.harbor) this.buildHarbor(boxes, roofs, stoneC);
+    if (stage.harbor) this.buildHarbor(boxes, stoneC);
     // village (and any stage with bare structs but no city/harbour): houses with roofs, low fences.
     // struct h is the absolute top of the block (terrain + height), as in buildVillage.
     if (stage.structs.length && !stage.city && !stage.harbor) {
       for (const s of stage.structs) {
         if (s.type === 'house') {
-          const hc = [0xc8b898, 0xb8a888, 0xd0c0a0][Math.floor(rand() * 3)];
+          const hc = A.house[Math.floor(rand() * A.house.length)];
           add(s.x0, -1, s.z0, s.x1, s.h, s.z1, hc);
-          roofs.push([(s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75]);
+          roofAt((s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, 2.4, (s.z1 - s.z0) * 0.75);
         } else if (s.type === 'fence') {
           add(s.x0, -1, s.z0, s.x1, s.h, s.z1, woodC[Math.floor(rand() * 3)]);
         }
       }
     }
+      {
+        // a keep behind the walls, shaped by the era's architecture:
+        // a tenshu of plastered tiers, a stone donjon, a domed citadel
+        // or a stepped pyramid temple (render-only structs, no raster)
+        const t = stage.structs.find(x => x.type === 'tenshu' || x.type === 'keep');
+        if (t && A.keep) {
+          const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2, w0 = t.x1 - t.x0, d0 = t.z1 - t.z0;
+          if (A.keep === 'tenshu') {
+            let y = 0;
+            for (let k = 0; k < 3; k++) {
+              const wk = w0 * (1 - k * 0.22), dk = d0 * (1 - k * 0.22), hk = k === 2 ? 4.4 : 5;
+              add(cx - wk / 2, y, cz - dk / 2, cx + wk / 2, y + hk, cz + dk / 2, 0xe8e2d2);
+              roofAt(cx, y + hk, cz, wk * 0.72, 1.8, dk * 0.72, 'hip');
+              y += hk;
+            }
+          } else if (A.keep === 'stone') {
+            add(cx - w0 / 2, 0, cz - d0 / 2, cx + w0 / 2, 11, cz + d0 / 2, A.wall[1]);
+            roofAt(cx, 11, cz, w0 * 0.72, 3.2, d0 * 0.72, 'gable');
+            for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) cones.push([cx + dx * (w0 / 2 - 1.2), 11, cz + dz * (d0 / 2 - 1.2), 2.0, 3.6]);
+          } else if (A.keep === 'dome') {
+            add(cx - w0 / 2, 0, cz - d0 / 2, cx + w0 / 2, 7.5, cz + d0 / 2, A.wall[1]);
+            domes.push([cx, 7.5, cz, Math.min(w0, d0) * 0.6, 6.5]);
+            for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) domes.push([cx + dx * (w0 / 2 - 1.6), 7.5, cz + dz * (d0 / 2 - 1.6), 2.3, 2.3]);
+          } else if (A.keep === 'pyramid') {
+            let y = 0;
+            for (let k = 0; k < 3; k++) {
+              const wk = w0 * (1 - k * 0.24), dk = d0 * (1 - k * 0.24);
+              add(cx - wk / 2, y, cz - dk / 2, cx + wk / 2, y + 3.2, cz + dk / 2, A.wall[k % A.wall.length]);
+              y += 3.2;
+            }
+            add(cx - 2.2, y, cz - 2.2, cx + 2.2, y + 2.6, cz + 2.2, A.wall[0]);
+            add(cx - 2.6, y + 2.6, cz - 2.6, cx + 2.6, y + 2.95, cz + 2.6, A.roof);
+          }
+        }
+      }
     // boats: a tapered hull, a bench and a mast. ships: a long hull with a deck, a mast, a yard
     // with the sail furled on it, and a raised stern
     const hull = [];
@@ -179,26 +224,71 @@ export class StageRenderer {
       }
     }
     if (boxes.length) this.group.add(this.makeBoxes(boxes));
-    for (const [list, color] of [[tents, 0xd9cfae], [tentsBig, 0xb8493a]]) {
+    for (const [list, ci] of [[tents, 0], [tentsBig, 1]]) {
       if (!list.length) continue;
-      const g = new THREE.ConeGeometry(0.72, 1, 5).translate(0, 0.5, 0);
-      const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
-      const im = new THREE.InstancedMesh(g, mat, list.length);
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      if (A.tentKind === 'ger') {
+        // a round felt ger: cylinder wall and a shallow cone roof
+        const bodies = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.52, 1, 10).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: A.tent[ci], flatShading: true }), list.length);
+        const caps = new THREE.InstancedMesh(new THREE.ConeGeometry(0.72, 1, 10).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: ci ? 0xb8493a : A.tentRoof, flatShading: true }), list.length);
+        list.forEach((r, i) => {
+          q.setFromAxisAngle(UP, i * 0.7);
+          p.set(r[0], r[1], r[2]); sc.set(r[3] * 1.35, r[4] * 0.62, r[5] * 1.35); m.compose(p, q, sc); bodies.setMatrixAt(i, m);
+          p.set(r[0], r[1] + r[4] * 0.62, r[2]); sc.set(r[3] * 1.5, r[4] * 0.4, r[5] * 1.5); m.compose(p, q, sc); caps.setMatrixAt(i, m);
+        });
+        this.group.add(bodies, caps);
+        continue;
+      }
+      const g = new THREE.ConeGeometry(0.72, 1, 5).translate(0, 0.5, 0);
+      const mat = new THREE.MeshLambertMaterial({ color: A.tent[ci], flatShading: true });
+      const im = new THREE.InstancedMesh(g, mat, list.length);
       list.forEach((r, i) => { p.set(r[0], r[1], r[2]); sc.set(r[3] * 1.35, r[4], r[5] * 1.35); q.setFromAxisAngle(UP, i * 0.7); m.compose(p, q, sc); im.setMatrixAt(i, m); });
       this.group.add(im);
     }
     if (roofs.length) {
-      const g = new THREE.ConeGeometry(0.72, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0);
-      const mat = new THREE.MeshLambertMaterial({ color: 0xa0503a, flatShading: true });
-      const im = new THREE.InstancedMesh(g, mat, roofs.length);
-      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
-      roofs.forEach((r, i) => { p.set(r[0], r[1], r[2]); s.set(r[3] * 1.4, r[4], r[5] * 1.4); m.compose(p, q, s); im.setMatrixAt(i, m); });
+      const byKind = {};
+      for (const r of roofs) (byKind[r[6] || 'pyramid'] ||= []).push(r);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      const inst = (geo, list, place) => {
+        if (!list.length) return;
+        const im = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: A.roof, flatShading: true }), list.length);
+        list.forEach((r, i) => { place(r); m.compose(p, q, sc); im.setMatrixAt(i, m); });
+        this.group.add(im);
+      };
+      const coneGeo = new THREE.ConeGeometry(0.72, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0);
+      inst(coneGeo, byKind.pyramid || [], r => { p.set(r[0], r[1], r[2]); q.identity(); sc.set(r[3] * 1.4, r[4] * A.roofH, r[5] * 1.4); });
+      inst(coneGeo, byKind.hip || [], r => { p.set(r[0], r[1], r[2]); q.identity(); sc.set(r[3] * 1.62, r[4] * A.roofH, r[5] * 1.62); });
+      // gabled roof: a triangular prism, ridge along the longer side
+      const P = [[-.5, 0, -.5], [.5, 0, -.5], [.5, 0, .5], [-.5, 0, .5], [-.5, 1, 0], [.5, 1, 0]];
+      const tris = [[0, 1, 5], [0, 5, 4], [2, 3, 4], [2, 4, 5], [0, 4, 3], [1, 2, 5], [0, 3, 2], [0, 2, 1]];
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute('position', new THREE.Float32BufferAttribute(tris.flatMap(t => t.flatMap(i => P[i])), 3));
+      pg.computeVertexNormals();
+      inst(pg, byKind.gable || [], r => {
+        p.set(r[0], r[1], r[2]);
+        if (r[5] > r[3]) { q.setFromAxisAngle(UP, Math.PI / 2); sc.set(r[5] * 1.4, r[4] * A.roofH, r[3] * 1.4); }
+        else { q.identity(); sc.set(r[3] * 1.4, r[4] * A.roofH, r[5] * 1.4); }
+      });
+      const domeGeo = new THREE.SphereGeometry(0.5, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+      inst(domeGeo, byKind.dome || [], r => { p.set(r[0], r[1], r[2]); q.identity(); sc.set(r[3] * 1.35, r[4] * 1.2 * A.roofH, r[5] * 1.35); });
+    }
+    // tower caps and keep domes/cones gathered along the way
+    if (cones.length) {
+      const im = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0), new THREE.MeshLambertMaterial({ color: A.roof, flatShading: true }), cones.length);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      cones.forEach((r, i) => { p.set(r[0], r[1], r[2]); sc.set(r[3] * 2, r[4], r[3] * 2); m.compose(p, q, sc); im.setMatrixAt(i, m); });
+      this.group.add(im);
+    }
+    if (domes.length) {
+      const im = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: A.roof, flatShading: true }), domes.length);
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      domes.forEach((r, i) => { p.set(r[0], r[1], r[2]); sc.set(r[3] * 2, r[4], r[3] * 2); m.compose(p, q, sc); im.setMatrixAt(i, m); });
       this.group.add(im);
     }
   }
   // stone quays round the basin, the mole, warehouses, houses and the lighthouse
-  buildHarbor(boxes, roofs, stoneC) {
+  buildHarbor(boxes, stoneC) {
+    const A = this.A, roofAt = this.roofAt;
     const st = this.stage, H = st.harbor, Q = H.Q, top = Q + 0.08;
     const cz = (H.zS + H.zN) / 2, hz = (H.zN - H.zS) / 2;
     // walk the basin outline offset by o, calling f(x, z, heading, length) for each 2 m piece
@@ -237,13 +327,13 @@ export class StageRenderer {
     for (const s of st.structs) {
       if (s.type === 'house' || s.type === 'warehouse') {
         const wh = s.type === 'warehouse';
-        const hc = wh ? [0xb09a78, 0xa08c6c, 0xbca684][Math.floor(rand() * 3)] : [0xd8ccae, 0xc8b898, 0xe0d4b8][Math.floor(rand() * 3)];
+        const hc = wh ? A.wall[Math.floor(rand() * A.wall.length)] : A.house[Math.floor(rand() * A.house.length)];
         boxes.push([(s.x0 + s.x1) / 2, (s.h - 1) / 2, (s.z0 + s.z1) / 2, s.x1 - s.x0, s.h + 1, s.z1 - s.z0, hc]);
-        roofs.push([(s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, wh ? 1.8 : 2.4, (s.z1 - s.z0) * 0.75]);
+        roofAt((s.x0 + s.x1) / 2, s.h, (s.z0 + s.z1) / 2, (s.x1 - s.x0) * 0.75, wh ? 1.8 : 2.4, (s.z1 - s.z0) * 0.75);
       } else if (s.type === 'lighthouse') {
         const cx = (s.x0 + s.x1) / 2, czz = (s.z0 + s.z1) / 2, b = Q + 0.08;
-        boxes.push([cx, (b + b + 7) / 2, czz, 7, 7, 7, 0xb0a690]);
-        boxes.push([cx, b + 7 + 3.5, czz, 5, 7, 5, 0xc0b6a0]);
+        boxes.push([cx, (b + b + 7) / 2, czz, 7, 7, 7, A.wall[2]]);
+        boxes.push([cx, b + 7 + 3.5, czz, 5, 7, 5, A.house[2] || A.wall[0]]);
         boxes.push([cx, b + 14.3, czz, 5.8, 0.6, 5.8, 0x8c8270]);
         for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) boxes.push([cx + dx, b + 15.6, czz + dz, 0.5, 2, 0.5, 0x8c8270]);
         boxes.push([cx, b + 15.3, czz, 2.2, 1.4, 2.2, 0xff9a3a]); // the beacon
@@ -292,8 +382,10 @@ export class StageRenderer {
       if (!visible(b.x, WL, b.z, b.len)) continue;
       const fx = Math.sin(b.heading), fz = Math.cos(b.heading), rx = fz, rz = -fx;
       const hl = b.len / 2, hw = b.width / 2;
-      // hull: a flat bottom, two sides and a raised bow
-      box.seg(b.x - fx * hl, WL - 0.25, b.z - fz * hl, b.x + fx * hl, WL - 0.25, b.z + fz * hl, rx, 0, rz, b.width * 0.8, 0.5, C_HULL);
+      // hull: a flat bottom, two sides and a raised bow. The top face must stay
+      // clear of the water plane: at exactly WL it z-fights the transparent
+      // water sheet and the waterline band shimmers / blows out mid-ship.
+      box.seg(b.x - fx * hl, WL - 0.05, b.z - fz * hl, b.x + fx * hl, WL - 0.05, b.z + fz * hl, rx, 0, rz, b.width * 0.8, 0.6, C_HULL);
       for (const s of [-1, 1]) box.seg(b.x - fx * hl * 0.9 + rx * hw * s, WL + 0.1, b.z - fz * hl * 0.9 + rz * hw * s, b.x + fx * hl * 0.9 + rx * hw * 0.6 * s, WL + 0.1, b.z + fz * hl * 0.9 + rz * hw * 0.6 * s, 0, 1, 0, 0.15, 0.7, C_WOOD);
       box.seg(b.x + fx * hl * 0.9, WL - 0.3, b.z + fz * hl * 0.9, b.x + fx * (hl + 0.4), WL + 0.8, b.z + fz * (hl + 0.4), rx, 0, rz, b.width * 0.5, 0.25, C_WOOD);
       // one oar for each oarsman (see BodyRenderer.emitRowers), sweeping while she is under way
@@ -419,7 +511,7 @@ export class StageRenderer {
         if (!visible(g.x, WL, g.z, len)) continue;
         const fx = Math.sin(g.heading || 0), fz = Math.cos(g.heading || 0), rx = fz, rz = -fx;
         const hl = len / 2, hw = wid / 2;
-        box.seg(g.x - fx * hl, WL - 0.25, g.z - fz * hl, g.x + fx * hl, WL - 0.25, g.z + fz * hl, rx, 0, rz, wid * 0.8, 0.5, C_HULL);
+        box.seg(g.x - fx * hl, WL - 0.05, g.z - fz * hl, g.x + fx * hl, WL - 0.05, g.z + fz * hl, rx, 0, rz, wid * 0.8, 0.6, C_HULL); // top face clear of the water plane (see emitLanding)
         for (const s of [-1, 1]) box.seg(g.x - fx * hl * 0.9 + rx * hw * s, WL + 0.1, g.z - fz * hl * 0.9 + rz * hw * s, g.x + fx * hl * 0.9 + rx * hw * 0.6 * s, WL + 0.1, g.z + fz * hl * 0.9 + rz * hw * 0.6 * s, 0, 1, 0, 0.15, 0.7, C_WOOD);
         box.seg(g.x + fx * hl * 0.9, WL - 0.3, g.z + fz * hl * 0.9, g.x + fx * (hl + 0.4), WL + 0.8, g.z + fz * (hl + 0.4), rx, 0, rz, wid * 0.5, 0.25, C_WOOD);
         box.seg(g.x, WL + 0.4, g.z, g.x, WL + 7, g.z, 1, 0, 0, 0.18, 0.18, C_DARK); // mast
