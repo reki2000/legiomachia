@@ -60,7 +60,7 @@ export function buildTerrain(scene, stage) {
       const town = Math.abs(x) < Hb.townX + 6 && z > Hb.townZ0 - 6 && z < Hb.townZ1 + 6;
       c.lerp(paved, Math.max(smoothstep(24, 12, d) * smoothstep(-4, 6, s), town ? 0.55 : 0));
     }
-    if (stage.id === 'canyon') c.lerp(rock, smoothstep(1.5, 9, h) * 0.85);
+    if (stage.canyon || stage.id === 'canyon') c.lerp(rock, smoothstep(1.5, 9, h) * 0.85);
     c.multiplyScalar(0.92 + rand() * 0.12);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }

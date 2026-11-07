@@ -29,6 +29,11 @@ export const WEATHER = {
     hemiSky: 0x6a80c0, hemiGround: 0x1a1a2a, hemi: 0.8, sun: 0.7, sunColor: 0x8aa0e0, sunPos: [100, 140, -60],
     rain: 0, stars: 1, env: { speed: 1, acc: 0.85, vis: 0.6 },
   },
+  snow: {
+    name: '雪', top: 0x8fa3b8, bottom: 0xd8dde2, fog: 0xd8dde2, near: 60, far: 500,
+    hemiSky: 0xe8eef4, hemiGround: 0x8a9098, hemi: 1.25, sun: 1.1, sunColor: 0xeef2ff, sunPos: [-80, 120, 40],
+    rain: 0.7, stars: 0, snow: 1, env: { speed: 0.95, acc: 0.85, vis: 0.75 },
+  },
 };
 
 const NUM = ['near', 'far', 'hemi', 'sun', 'rain', 'stars'];
@@ -110,10 +115,13 @@ export class Weather {
     }
     this.stars.visible = c.stars > 0.02; this.starMat.opacity = c.stars;
     this.rain.visible = c.rain > 0.02; this.rain.material.opacity = 0.4 * Math.min(1, c.rain);
+    // snow reuses the streak system with white, slower flakes (see stepRain)
+    this.rain.material.color.setHex(this.target.snow ? 0xffffff : 0xaab8c8);
   }
   stepRain(dt) {
     const cam = this.camera.position, P = this.dropPos, out = this.rainAttr.array;
-    const fall = 38 * dt, drift = 6 * dt;
+    const snowy = !!this.target.snow;
+    const fall = 38 * dt * (snowy ? 0.32 : 1), drift = 6 * dt * (snowy ? 2.2 : 1);
     // fewer drops when the camera is high above the ground: they would only be specks
     const n = Math.floor(DROPS * Math.min(1, this.cur.rain));
     const base = cam.y - 12;

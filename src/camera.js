@@ -38,6 +38,52 @@ export class CameraRig {
       this.yaw -= e.movementX * 0.005;
       this.pitch = clamp(this.pitch + e.movementY * 0.004, 0.03, 1.45);
     });
+    // touch: one finger pans along the camera's ground axes, two fingers pinch-zoom and
+    // twist to yaw. Touches are tracked by identifier; a drag hands control to free mode.
+    this.touches = new Map();
+    this.pinch = null; // { d, a } last pinch distance / angle
+    const onTouch = e => {
+      if (e.type === 'touchstart') for (const t of e.changedTouches) this.touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+      if (this.touches.size) e.preventDefault();
+      if (e.type === 'touchmove') {
+        for (const t of e.changedTouches) {
+          const p = this.touches.get(t.identifier);
+          if (!p) continue;
+          if (this.touches.size === 1) {
+            if (this.mode !== 'free') this.setMode('free');
+            const dx = t.clientX - p.x, dy = t.clientY - p.y;
+            const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+            const rx = -fz, rz = fx;
+            const s = this.dist * 0.0016;
+            this.target.x -= (rx * dx + fx * dy) * s;
+            this.target.z -= (rz * dx + fz * dy) * s;
+            this.target.x = clamp(this.target.x, -450, 450); this.target.z = clamp(this.target.z, -450, 450);
+          }
+          p.x = t.clientX; p.y = t.clientY;
+        }
+        if (this.touches.size === 2) {
+          if (this.mode !== 'free') this.setMode('free');
+          const [p, q] = [...this.touches.values()];
+          const d = Math.hypot(p.x - q.x, p.y - q.y) || 1;
+          const a = Math.atan2(p.y - q.y, p.x - q.x);
+          if (this.pinch) {
+            this.dist = clamp(this.dist * this.pinch.d / d, 4, Math.max(450, this.overviewDist || 0));
+            let da = a - this.pinch.a;
+            if (da > Math.PI) da -= Math.PI * 2; if (da < -Math.PI) da += Math.PI * 2;
+            this.yaw += da;
+          }
+          this.pinch = { d, a };
+        }
+      }
+      if (e.type === 'touchend' || e.type === 'touchcancel') {
+        for (const t of e.changedTouches) this.touches.delete(t.identifier);
+        if (this.touches.size < 2) this.pinch = null;
+      }
+    };
+    dom.addEventListener('touchstart', onTouch, { passive: false });
+    dom.addEventListener('touchmove', onTouch, { passive: false });
+    dom.addEventListener('touchend', onTouch, { passive: false });
+    dom.addEventListener('touchcancel', onTouch, { passive: false });
   }
   setMode(m, world) {
     if (m === 'overview' && world) {

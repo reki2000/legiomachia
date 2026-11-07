@@ -33,6 +33,15 @@
           <option value="harbor">港の上陸戦</option>
           <option value="siege">攻城戦</option>
           <option value="camp">野営地襲撃</option>
+          <option value="marsh">沼地の戦い</option>
+          <option value="village">村落戦</option>
+          <option value="ambush">峠の伏撃</option>
+          <option value="frozen">凍河の戦い</option>
+          <option value="flood">決壊洪水</option>
+          <option value="firestorm">燃える都</option>
+          <option value="landslide">崩れる峠</option>
+          <option value="naval">海戦接舷</option>
+          <option value="burnforest">火攻めの森</option>
         </select>
       </label>
       <label>天候
@@ -42,6 +51,7 @@
           <option value="rain">雨</option>
           <option value="dusk">夕暮れ</option>
           <option value="night">夜</option>
+          <option value="snow">雪</option>
         </select>
       </label>
       <label>勝利条件
@@ -50,6 +60,7 @@
           <option value="capture">拠点占領</option>
           <option value="reinforce">増援</option>
           <option value="retreat">離脱戦 (野戦のみ)</option>
+          <option value="escort">輜重護衛</option>
         </select>
       </label>
       <label>規模
@@ -84,6 +95,33 @@
       </label>
       <label><input type="checkbox" id="cAuto" checked /> 自軍AI</label>
       <label><input type="checkbox" id="cBgm" checked /> BGM (M)</label>
+      <label>シード <input type="number" id="sSeed" style="width:76px" /></label>
+      <label>難易度
+        <select id="sDiff">
+          <option value="easy">易</option>
+          <option value="normal" selected>普</option>
+          <option value="hard">難</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="cPerf" /> 性能表示</label>
+    </div>
+    <div class="panel small" id="perfHud" hidden></div>
+    <div class="panel" id="minimapPanel">
+      <canvas id="minimap" width="184" height="184"></canvas>
+    </div>
+    <div class="panel" id="results" hidden>
+      <div class="title" id="resTitle"></div>
+      <div class="small" id="resMeta"></div>
+      <div id="resArmies"></div>
+      <div class="small" id="resMvp"></div>
+      <div id="resRegs"></div>
+      <div class="small">戦況の経過</div>
+      <div id="resTimeline"></div>
+      <div class="orders">
+        <button id="bRematch" class="primary">同じシードで再戦</button>
+        <button id="bCopy">この戦いのURLをコピー</button>
+        <button id="bCloseResults">閉じる</button>
+      </div>
     </div>
     <div class="panel" id="tree"></div>
     <div class="panel" id="selPanel" hidden>
@@ -110,6 +148,8 @@
         <button data-t="pontoon">舟橋を架ける</button>
         <button data-t="demolish">木橋を落とす</button>
         <button data-t="ram">城門を破る</button>
+        <button data-t="ignite">火を放つ</button>
+        <button data-t="clear">瓦礫を除去</button>
       </div>
     </div>
     <div class="panel" id="soldier" hidden></div>
@@ -123,6 +163,10 @@
       工兵選択中の右クリック: 川→舟橋, 橋→破壊, 城壁→梯子, 地面→防御杭<br />
       左の編成表: 将をクリックで配下の全部隊を選択<br />
       T: 兵を追跡 ・ Z: スロー ・ Tab: 部隊を順に選択 ・ M: BGM<br />
+      ミニマップ (右下): クリック/ドラッグでその地点へカメラ移動<br />
+      タッチ: 1本指ドラッグで移動 ・ 2本指でズーム/回転 ・ タップで部隊選択<br />
+      性能表示: FPS・処理時間・画質レベル (Q0–Q3、自動調整) を表示<br />
+      終了後: 戦果画面で戦績・殊勲者・経過を確認、URLコピーで戦いを共有<br />
       <span id="helpToggle">[閉じる]</span>
     </div>
     <a id="ghLink" href="https://github.com/reki2000/legiomachia" target="_blank" rel="noopener" title="GitHub: reki2000/legiomachia" aria-label="GitHub repository">
